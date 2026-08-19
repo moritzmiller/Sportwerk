@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pressespiegel Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  </head>
+  <body>
+    <nav class="session-bar" aria-label="Angemeldeter Nutzer">
+      <span>{{ session.user.name }}</span>
+      <a href="{{ url_for('logout') }}">Abmelden</a>
+    </nav>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Sportwerk</p>
+          <h1>Pressespiegel Generator</h1>
+        </div>
+        <div class="topbar__meta">
+          <a href="/">Dashboard</a>
+          <span>Web-App</span>
+          <span>PDF Export</span>
+        </div>
+      </header>
+
+      <form id="pressespiegel-form" class="workspace" enctype="multipart/form-data">
+        <section class="panel panel--wide" aria-labelledby="articles-title">
+          <div class="panel__header">
+            <div>
+              <p class="eyebrow">Artikel</p>
+              <h2 id="articles-title">Artikelgruppen</h2>
+            </div>
+            <button class="button button--secondary" type="button" id="add-section">Neue Überschrift hinzufügen</button>
+          </div>
+
+          <div id="sections" class="section-list"></div>
+
+          <details class="fallback">
+            <summary>URLs ohne Abschnitte</summary>
+            <label class="field">
+              <span>Freie URL-Liste</span>
+              <textarea name="fallback_urls" rows="6" placeholder="https://example.com/artikel"></textarea>
+            </label>
+          </details>
+        </section>
+
+        <section class="panel" aria-labelledby="layout-title">
+          <div class="panel__header">
+            <div>
+              <p class="eyebrow">PDF</p>
+              <h2 id="layout-title">Layout</h2>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <label class="field field--full">
+              <span>Layout</span>
+              <select name="layout_id" id="layout-select">
+                {% for layout in layouts %}
+                  <option value="{{ layout.layout_id }}">{{ layout.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Titelseite</span>
+              <select name="cover_style" id="cover-style">
+                <option value="classic">Klassisch</option>
+                <option value="brand_band">Markenband</option>
+                <option value="editorial">Editorial</option>
+                <option value="image">Bild</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Titeltext</span>
+              <input name="title_text" id="title-text" type="text" value="{{ default_layout.title_text }}">
+            </label>
+
+            <div class="field field--full">
+              <span>Titelseitenbild</span>
+              <label class="file-picker">
+                <input name="cover_image" type="file" accept=".png,.jpg,.jpeg">
+                <span>Datei auswählen</span>
+                <strong>Keine Datei ausgewählt</strong>
+              </label>
+              <input name="cover_image_path" id="cover-image-path" type="hidden">
+              <small>PNG/JPG, mindestens 1240x1754 px, A4-Hochformat. Wird genutzt, wenn die Titelseite auf „Bild“ steht.</small>
+            </div>
+
+            <label class="field">
+              <span>Schriftart</span>
+              <select name="font_family" id="font-family">
+                {% for font in fonts %}
+                  <option value="{{ font }}">{{ font }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <div class="field">
+              <span>Neue Schrift hinzufügen</span>
+              <label class="file-picker">
+                <input name="font_file" type="file" accept=".ttf,.otf">
+                <span>Datei auswählen</span>
+                <strong>Keine Datei ausgewählt</strong>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Name der neuen Schrift</span>
+              <input name="font_label" type="text" placeholder="z. B. Sportwerk Sans">
+            </label>
+
+            <label class="field">
+              <span>Hintergrund</span>
+              <select name="background_kind" id="background-kind">
+                <option value="color">Farbe</option>
+                <option value="image">Bild</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Hintergrundfarbe</span>
+              <input name="background_hex" id="background-hex" type="color" value="{{ default_layout.background_hex }}">
+            </label>
+
+            <div class="field field--full">
+              <span>Hintergrundbild</span>
+              <label class="file-picker">
+                <input name="background_image" type="file" accept=".png,.jpg,.jpeg">
+                <span>Datei auswählen</span>
+                <strong>Keine Datei ausgewählt</strong>
+              </label>
+              <input name="background_image_path" id="background-image-path" type="hidden">
+              <small>PNG/JPG, mindestens 1240x1754 px, A4-Hochformat.</small>
+            </div>
+
+            <label class="field">
+              <span>Akzentfarbe</span>
+              <input name="accent_hex" id="accent-hex" type="color" value="{{ default_layout.accent_hex }}">
+            </label>
+
+            <div class="field">
+              <span>Hauptlogo</span>
+              <label class="file-picker">
+                <input name="main_logo" type="file" accept=".png,.jpg,.jpeg,.ico">
+                <span>Datei auswählen</span>
+                <strong>Keine Datei ausgewählt</strong>
+              </label>
+              <input name="main_logo_path" id="main-logo-path" type="hidden">
+            </div>
+
+            <label class="field field--full">
+              <span>Als neues Layout speichern</span>
+              <input name="save_layout_name" type="text" placeholder="Optionaler Layoutname">
+            </label>
+          </div>
+        </section>
+
+        <aside class="panel panel--side" aria-labelledby="status-title">
+          <div class="panel__header">
+            <div>
+              <p class="eyebrow">Export</p>
+              <h2 id="status-title">Status</h2>
+            </div>
+          </div>
+
+          <div class="summary">
+            <div>
+              <span id="summary-sections">1</span>
+              <p>Abschnitte</p>
+            </div>
+            <div>
+              <span id="summary-urls">0</span>
+              <p>URLs</p>
+            </div>
+          </div>
+
+          <button class="button button--primary" type="submit">PDF erstellen</button>
+
+          <div class="progress" aria-label="Fortschritt">
+            <div id="progress-bar"></div>
+          </div>
+          <p id="status-text" class="status-text">Bereit</p>
+          <a id="download-link" class="button button--download hidden" href="#">PDF herunterladen</a>
+
+          <div class="log" id="log-output" aria-live="polite"></div>
+        </aside>
+      </form>
+    </main>
+
+    <template id="section-template">
+      <article class="section-item">
+        <div class="section-item__head">
+          <label class="field">
+            <span>Überschrift</span>
+            <input name="section_heading" type="text" placeholder="z. B. Regionale Presse">
+          </label>
+          <button class="icon-button remove-section" type="button" aria-label="Abschnitt entfernen">×</button>
+        </div>
+        <label class="field">
+          <span>URLs</span>
+          <textarea name="section_urls" rows="7" placeholder="https://example.com/artikel-1&#10;https://example.com/artikel-2"></textarea>
+        </label>
+      </article>
+    </template>
+
+    <script id="layout-data" type="application/json">{{ layouts_json | tojson }}</script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

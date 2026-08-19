@@ -1,0 +1,36 @@
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:8000
+Press CTRL+C to quit
+127.0.0.1 - - [12/Aug/2026 08:56:50] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 10:17:47] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 10:17:49] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 10:17:50] "GET /assets/app.css HTTP/1.1" 304 -
+127.0.0.1 - - [12/Aug/2026 10:17:50] "GET /favicon.ico HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 10:17:50] "GET /login?next=/favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 10:18:00] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 10:18:01] "GET /assets/app.css HTTP/1.1" 304 -
+127.0.0.1 - - [12/Aug/2026 10:18:01] "GET /favicon.ico HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 10:18:04] "GET /login?next=/favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 11:53:13] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 11:53:13] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 11:53:13] "GET /assets/app.css HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 11:53:13] "GET /favicon.ico HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 11:53:13] "GET /login?next=/favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 14:39:49] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 14:39:49] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 14:39:49] "GET /assets/app.css HTTP/1.1" 304 -
+127.0.0.1 - - [12/Aug/2026 14:39:49] "GET /favicon.ico HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 14:39:49] "GET /login?next=/favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 14:39:54] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 14:39:54] "GET /assets/app.css HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 14:39:54] "GET /favicon.ico HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 14:39:54] "GET /login?next=/favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 15:04:23] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 15:04:23] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 15:04:24] "GET /assets/app.css HTTP/1.1" 304 -
+127.0.0.1 - - [12/Aug/2026 15:04:24] "GET /favicon.ico HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 15:04:24] "GET /login?next=/favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 15:06:37] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 15:06:38] "GET /auth/google?next=/ HTTP/1.1" 302 -
+127.0.0.1 - - [12/Aug/2026 15:06:40] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [12/Aug/2026 15:06:40] "GET /auth/google?next=/ HTTP/1.1" 302 -

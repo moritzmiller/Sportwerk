@@ -1,0 +1,42 @@
+[
+  {
+      "type": "function",
+      "name": "trello_meeting",
+      "description": "Erstellt eine aktuelle Übersicht aller Sportwerk-Projekte aus Trello zur Vorbereitung des wöchentlichen Montagsmeetings. Nutze dieses Tool nur, wenn der Nutzer die Übersicht tatsächlich erstellen oder aktualisieren möchte.",
+      "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+      },
+      "strict": true
+  },
+
+  {
+      "type": "function",
+      "name": "teilnahmebedingungen",
+      "description": "Erstellt vollständige Teilnahmebedingungen für eineTicketverlosung von Sachsenlotto bei einem Sportverein.Nutze dieses Tool nur, wenn konkrete Teilnahmebedingungenerstellt werden sollen.",
+      "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+      },
+      "strict": true
+  },
+  {
+      "type": "function",
+      "name": "gmail",
+      "description": "Ruft die aktuellen beruflichen E-Mails aus dem Gmail-Postfach abund analysiert zusammengehörige E-Mails als einen gemeinsamenVorgang. Die Vorgänge werden in KI_MACHT_DAS, DELEGIEREN, SELBST_MACHEN und LOESCHEN eingeordnet.",
+      "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+      },
+      "strict": true
+  },
+  {
+      "type": "web_search"
+  }
+]
