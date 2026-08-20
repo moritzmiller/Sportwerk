@@ -1,0 +1,157 @@
+
+> gatekeeper@0.1.0 predev
+> prisma generate
+
+
+✔ Generated Prisma Client (v7.8.0) to .\node_modules\@prisma\client in 535ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+
+> gatekeeper@0.1.0 dev
+> next dev -p 3000
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.104.53:3000
+- Environments: .env.local
+✓ Ready in 1565ms
+
+○ Compiling /angebote ...
+ GET /angebote 200 in 192ms (next.js: 29ms, proxy.ts: 16ms, application-code: 147ms)
+ GET /angebote 200 in 106ms (next.js: 9ms, proxy.ts: 7ms, application-code: 91ms)
+ GET /angebote 200 in 139ms (next.js: 8ms, proxy.ts: 9ms, application-code: 122ms)
+ GET /angebote 200 in 111ms (next.js: 5ms, proxy.ts: 5ms, application-code: 102ms)
+ GET /angebote 200 in 137ms (next.js: 7ms, proxy.ts: 7ms, application-code: 123ms)
+ GET /angebote 200 in 105ms (next.js: 8ms, proxy.ts: 10ms, application-code: 88ms)
+ GET /angebote 200 in 139ms (next.js: 8ms, proxy.ts: 10ms, application-code: 121ms)
+ GET /angebote 200 in 122ms (next.js: 8ms, proxy.ts: 8ms, application-code: 106ms)
+ GET /angebote 200 in 927ms (next.js: 293ms, proxy.ts: 197ms, application-code: 438ms)
+ GET /angebote 200 in 512ms (next.js: 159ms, proxy.ts: 93ms, application-code: 260ms)
+ GET /angebote 200 in 527ms (next.js: 167ms, proxy.ts: 100ms, application-code: 260ms)
+ GET /angebote 200 in 656ms (next.js: 210ms, proxy.ts: 115ms, application-code: 331ms)
+ GET /angebote 200 in 917ms (next.js: 268ms, proxy.ts: 196ms, application-code: 453ms)
+ GET /auth 200 in 988ms (next.js: 772ms, proxy.ts: 6ms, application-code: 210ms)
+ GET /auth 200 in 52ms (next.js: 6ms, proxy.ts: 6ms, application-code: 39ms)
+ GET /auth 200 in 90ms (next.js: 10ms, proxy.ts: 8ms, application-code: 72ms)
+ GET /auth 200 in 84ms (next.js: 8ms, proxy.ts: 10ms, application-code: 66ms)
+ GET /auth 200 in 79ms (next.js: 7ms, proxy.ts: 6ms, application-code: 65ms)
+ GET /auth 200 in 86ms (next.js: 7ms, proxy.ts: 8ms, application-code: 71ms)
+ GET /angebote 200 in 555ms (next.js: 164ms, proxy.ts: 121ms, application-code: 270ms)
+ GET /auth 200 in 93ms (next.js: 19ms, proxy.ts: 7ms, application-code: 67ms)
+ GET /auth 200 in 607ms (next.js: 293ms, proxy.ts: 192ms, application-code: 122ms)
+ GET / 200 in 1213ms (next.js: 329ms, proxy.ts: 4ms, application-code: 881ms)
+ GET / 200 in 684ms (next.js: 116ms, proxy.ts: 163ms, application-code: 405ms)
+ GET / 200 in 343ms (next.js: 10ms, proxy.ts: 8ms, application-code: 325ms)
+○ Compiling /cities ...
+ GET /cities 200 in 6.8s (next.js: 6.6s, proxy.ts: 7ms, application-code: 190ms)
+ GET /angebote 200 in 491ms (next.js: 108ms, proxy.ts: 27ms, application-code: 356ms)
+ GET /auth 200 in 128ms (next.js: 25ms, proxy.ts: 12ms, application-code: 92ms)
+ GET /auth 200 in 139ms (next.js: 7ms, proxy.ts: 7ms, application-code: 125ms)
+ GET /auth 200 in 90ms (next.js: 10ms, proxy.ts: 8ms, application-code: 71ms)
+✓ Compiled in 251ms
+ GET /auth 200 in 560ms (next.js: 217ms, proxy.ts: 119ms, application-code: 225ms)
+✓ Compiled in 355ms
+ GET /auth 200 in 2.0s (next.js: 721ms, proxy.ts: 470ms, application-code: 851ms)
+ GET /auth 200 in 810ms (next.js: 268ms, proxy.ts: 239ms, application-code: 303ms)
+ GET /auth 200 in 81ms (next.js: 10ms, proxy.ts: 6ms, application-code: 65ms)
+ GET /auth 200 in 68ms (next.js: 10ms, proxy.ts: 9ms, application-code: 49ms)
+ GET /auth 200 in 64ms (next.js: 6ms, proxy.ts: 6ms, application-code: 52ms)
+ GET /auth 200 in 80ms (next.js: 9ms, proxy.ts: 12ms, application-code: 60ms)
+ GET /auth 200 in 81ms (next.js: 8ms, proxy.ts: 10ms, application-code: 63ms)
+ GET /auth 200 in 90ms (next.js: 19ms, proxy.ts: 6ms, application-code: 65ms)
+ GET /auth 200 in 95ms (next.js: 7ms, proxy.ts: 4ms, application-code: 84ms)
+ GET /auth 200 in 105ms (next.js: 12ms, proxy.ts: 6ms, application-code: 87ms)
+ GET /auth 200 in 199ms (next.js: 7ms, proxy.ts: 16ms, application-code: 176ms)
+ GET /auth 200 in 69ms (next.js: 7ms, proxy.ts: 6ms, application-code: 56ms)
+ GET /auth 200 in 76ms (next.js: 9ms, proxy.ts: 3ms, application-code: 64ms)
+ GET /auth 200 in 72ms (next.js: 8ms, proxy.ts: 6ms, application-code: 57ms)
+ GET /auth 200 in 78ms (next.js: 5ms, proxy.ts: 6ms, application-code: 67ms)
+ GET /auth 200 in 78ms (next.js: 7ms, proxy.ts: 6ms, application-code: 65ms)
+ GET /auth 200 in 68ms (next.js: 8ms, proxy.ts: 7ms, application-code: 53ms)
+ GET /auth 200 in 81ms (next.js: 6ms, proxy.ts: 4ms, application-code: 71ms)
+ GET /auth 200 in 80ms (next.js: 9ms, proxy.ts: 6ms, application-code: 65ms)
+ GET /auth 200 in 94ms (next.js: 8ms, proxy.ts: 8ms, application-code: 79ms)
+ GET /auth 200 in 105ms (next.js: 22ms, proxy.ts: 7ms, application-code: 76ms)
+ GET /auth 200 in 72ms (next.js: 8ms, proxy.ts: 7ms, application-code: 57ms)
+ GET /auth 200 in 73ms (next.js: 10ms, proxy.ts: 8ms, application-code: 55ms)
+ GET /auth 200 in 91ms (next.js: 18ms, proxy.ts: 5ms, application-code: 67ms)
+ GET /auth 200 in 86ms (next.js: 6ms, proxy.ts: 7ms, application-code: 73ms)
+ GET /auth 200 in 78ms (next.js: 9ms, proxy.ts: 7ms, application-code: 63ms)
+ GET /auth 200 in 87ms (next.js: 9ms, proxy.ts: 6ms, application-code: 72ms)
+ GET /auth 200 in 82ms (next.js: 12ms, proxy.ts: 9ms, application-code: 62ms)
+ GET /auth 200 in 90ms (next.js: 10ms, proxy.ts: 5ms, application-code: 75ms)
+ GET /auth 200 in 89ms (next.js: 8ms, proxy.ts: 4ms, application-code: 77ms)
+ GET /auth 200 in 62ms (next.js: 7ms, proxy.ts: 6ms, application-code: 50ms)
+ GET /auth 200 in 79ms (next.js: 9ms, proxy.ts: 6ms, application-code: 64ms)
+ GET /auth 200 in 70ms (next.js: 6ms, proxy.ts: 3ms, application-code: 62ms)
+ GET /auth 200 in 117ms (next.js: 9ms, proxy.ts: 6ms, application-code: 101ms)
+ GET /auth 200 in 102ms (next.js: 10ms, proxy.ts: 10ms, application-code: 82ms)
+ GET /auth 200 in 78ms (next.js: 11ms, proxy.ts: 6ms, application-code: 61ms)
+ GET /auth 200 in 85ms (next.js: 6ms, proxy.ts: 4ms, application-code: 75ms)
+ GET /auth 200 in 90ms (next.js: 25ms, proxy.ts: 6ms, application-code: 60ms)
+ GET /auth 200 in 120ms (next.js: 9ms, proxy.ts: 7ms, application-code: 105ms)
+ GET /auth 200 in 131ms (next.js: 5ms, proxy.ts: 5ms, application-code: 120ms)
+ GET /auth 200 in 67ms (next.js: 7ms, proxy.ts: 3ms, application-code: 57ms)
+ GET /auth 200 in 142ms (next.js: 12ms, proxy.ts: 18ms, application-code: 112ms)
+ GET /auth 200 in 87ms (next.js: 20ms, proxy.ts: 6ms, application-code: 62ms)
+ GET /auth 200 in 4.1s (next.js: 2.4s, proxy.ts: 392ms, application-code: 1266ms)
+ GET /auth 200 in 1137ms (next.js: 94ms, proxy.ts: 61ms, application-code: 983ms)
+ GET / 200 in 4.8s (next.js: 1056ms, proxy.ts: 1601ms, application-code: 2.1s)
+ GET /api/events/recommended?sort=for-you&time=all&limit=14&source=home-discovery&recordImpressions=true 200 in 6.9s (next.js: 6.1s, proxy.ts: 90ms, application-code: 707ms)
+○ Compiling /api/auth/logout ...
+ POST /api/auth/logout 200 in 11.0s (next.js: 10.0s, proxy.ts: 146ms, application-code: 865ms)
+ GET /auth 200 in 1227ms (next.js: 738ms, proxy.ts: 128ms, application-code: 361ms)
+ GET / 200 in 2.1s (next.js: 926ms, proxy.ts: 795ms, application-code: 350ms)
+○ Compiling /api/auth/login ...
+ POST /api/auth/login 200 in 4.9s (next.js: 4.4s, proxy.ts: 13ms, application-code: 528ms)
+○ Compiling /admin ...
+ GET /admin 200 in 6.4s (next.js: 4.9s, proxy.ts: 93ms, application-code: 1407ms)
+ GET /angebote 200 in 632ms (next.js: 406ms, proxy.ts: 158ms, application-code: 69ms)
+○ Compiling /api/offers/studio ...
+ GET /api/offers/studio 500 in 6.9s (next.js: 4.9s, proxy.ts: 105ms, application-code: 1882ms)
+ GET /angebote 200 in 1696ms (next.js: 724ms, proxy.ts: 484ms, application-code: 488ms)
+ GET /api/offers/studio 500 in 683ms (next.js: 304ms, proxy.ts: 109ms, application-code: 271ms)
+ GET / 200 in 1013ms (next.js: 91ms, proxy.ts: 238ms, application-code: 684ms)
+ GET /api/events/recommended?sort=for-you&time=all&limit=14&source=home-discovery&recordImpressions=true 200 in 807ms (next.js: 262ms, proxy.ts: 70ms, application-code: 476ms)
+ POST /api/auth/logout 200 in 559ms (next.js: 387ms, proxy.ts: 76ms, application-code: 95ms)
+ GET /auth 200 in 1114ms (next.js: 35ms, proxy.ts: 5ms, application-code: 1074ms)
+ GET /api/events/recommended?sort=for-you&time=all&limit=14&source=home-discovery&recordImpressions=true 200 in 404ms (next.js: 20ms, proxy.ts: 22ms, application-code: 363ms)
+ POST /api/auth/logout 200 in 54ms (next.js: 31ms, proxy.ts: 10ms, application-code: 13ms)
+ GET /auth 200 in 138ms (next.js: 12ms, proxy.ts: 9ms, application-code: 116ms)
+ GET / 200 in 213ms (next.js: 11ms, proxy.ts: 9ms, application-code: 194ms)
+ GET /api/events/recommended?sort=for-you&time=all&limit=14&source=home-discovery&recordImpressions=true 200 in 270ms (next.js: 4ms, proxy.ts: 5ms, application-code: 261ms)
+ GET /auth 200 in 93ms (next.js: 28ms, proxy.ts: 18ms, application-code: 46ms)
+ POST /api/auth/login 200 in 544ms (next.js: 54ms, proxy.ts: 6ms, application-code: 484ms)
+ GET /admin 200 in 1008ms (next.js: 42ms, proxy.ts: 66ms, application-code: 900ms)
+✓ Compiled in 1648ms
+ GET /angebote 200 in 386ms (next.js: 118ms, proxy.ts: 174ms, application-code: 94ms)
+ GET /api/offers/studio 500 in 714ms (next.js: 12ms, proxy.ts: 71ms, application-code: 631ms)
+ GET /api/offers/studio 500 in 760ms (next.js: 37ms, proxy.ts: 168ms, application-code: 554ms)
+✓ Finished writing to filesystem cache in 12.3s
+ GET /angebote 200 in 43s (next.js: 18.4s, proxy.ts: 14.8s, application-code: 9.4s)
+ GET /angebote 200 in 10.5s (next.js: 8.5s, proxy.ts: 1587ms, application-code: 386ms)
+ GET /angebote 200 in 10.7s (next.js: 8.1s, proxy.ts: 2.2s, application-code: 518ms)
+✓ Finished writing to filesystem cache in 104s
+✓ Finished writing to filesystem cache in 18.3s
+○ Compiling /_not-found/page ...
+✓ Finished writing to filesystem cache in 116s
+✓ Compiled in 285.4s
+✓ Finished filesystem cache database compaction in 42s
+prisma:error Connection terminated due to connection timeout
+prisma:error Connection terminated due to connection timeout
+ GET /angebote 404 in 4.5min (next.js: 4.3min, proxy.ts: 2.9s, application-code: 13.2s)
+ GET /angebote 404 in 4.5min (next.js: 4.1min, proxy.ts: 2.9s, application-code: 23.6s)
+ GET /angebote 404 in 5.1min (next.js: 4.1min, proxy.ts: 37.9s, application-code: 25.8s)
+ GET /angebote 404 in 3.9min (next.js: 931ms, proxy.ts: 3.7min, application-code: 11.1s)
+ GET /angebote 404 in 3.9min (next.js: 42s, proxy.ts: 3.1min, application-code: 10.2s)
+ GET /angebote 404 in 3.9min (next.js: 1935ms, proxy.ts: 3.7min, application-code: 10.1s)
+ GET /angebote 404 in 17.2s (next.js: 5.7s, proxy.ts: 8.8s, application-code: 2.6s)
+ GET /angebote 404 in 8.3s (next.js: 262ms, proxy.ts: 202ms, application-code: 7.8s)
+ GET /angebote 404 in 8.3s (next.js: 6.0s, proxy.ts: 239ms, application-code: 2.1s)
+ GET /angebote 404 in 9.3s (next.js: 453ms, proxy.ts: 916ms, application-code: 7.9s)
+ GET /angebote 404 in 9.3s (next.js: 1194ms, proxy.ts: 7.4s, application-code: 708ms)
+ GET /angebote 404 in 18.8s (next.js: 360ms, proxy.ts: 8.9s, application-code: 9.6s)
+✓ Finished filesystem cache database compaction in 51s
+✓ Finished writing to filesystem cache in 10.3s

@@ -1,0 +1,88 @@
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "127.0.0.1".
+Cross-origin access to Next.js dev resources is blocked by default for safety.
+
+To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
+
+// next.config.js
+module.exports = {
+  allowedDevOrigins: ['127.0.0.1'],
+}
+
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+⚠ Blocked cross-origin request to Next.js dev resource /__nextjs_font/geist-latin.woff2 from "127.0.0.1".
+Cross-origin access to Next.js dev resources is blocked by default for safety.
+
+To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
+
+// next.config.js
+module.exports = {
+  allowedDevOrigins: ['127.0.0.1'],
+}
+
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+⨯ TypeError: Cannot read properties of undefined (reading 'findMany')
+    at GET (src\app\api\offers\studio\route.js:14:30)
+  12 |
+  13 |     const [customers, offers, companyProfile] = await Promise.all([
+> 14 |         prisma.offerCustomer.findMany({
+     |                              ^
+  15 |             where: { ownerId: user.id },
+  16 |             orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+  17 |         }),
+⨯ TypeError: Cannot read properties of undefined (reading 'findMany')
+    at GET (src\app\api\offers\studio\route.js:14:30)
+  12 |
+  13 |     const [customers, offers, companyProfile] = await Promise.all([
+> 14 |         prisma.offerCustomer.findMany({
+     |                              ^
+  15 |             where: { ownerId: user.id },
+  16 |             orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+  17 |         }),
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+⨯ TypeError: Cannot read properties of undefined (reading 'findMany')
+    at GET (src\app\api\offers\studio\route.js:14:30)
+  12 |
+  13 |     const [customers, offers, companyProfile] = await Promise.all([
+> 14 |         prisma.offerCustomer.findMany({
+     |                              ^
+  15 |             where: { ownerId: user.id },
+  16 |             orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+  17 |         }),
+⨯ TypeError: Cannot read properties of undefined (reading 'findMany')
+    at GET (src\app\api\offers\studio\route.js:14:30)
+  12 |
+  13 |     const [customers, offers, companyProfile] = await Promise.all([
+> 14 |         prisma.offerCustomer.findMany({
+     |                              ^
+  15 |             where: { ownerId: user.id },
+  16 |             orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+  17 |         }),
+[TypeError: fetch failed] {
+  [cause]: Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -4077,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -4077,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -4077,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
