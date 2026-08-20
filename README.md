@@ -1,199 +1,203 @@
-# Sportwerk Web-App
+# GateKeeper
 
-Sportwerk ist eine Flask-Webanwendung mit serverseitigen Python-Jobs fuer Pressespiegel-PDFs, Trello-Aktionen und Teilnahmebedingungen. Das Frontend liegt in `templates/` und `static/`; die eigentliche Fachlogik bleibt in den bestehenden Python-Modulen.
+GateKeeper is a Next.js event, ticketing, scanner, payment, CRM, and ERICH registration application.
 
-## Architekturentscheidung
+## Getting Started
 
-Die Anwendung hatte bereits Flask-Routen, Jinja-Templates, statische Assets und API-artige Job-Endpunkte. Deshalb bleibt Flask das passende Framework: klein genug fuer die klassische Web-App, aber ausreichend fuer die vorhandenen Hintergrundjobs. Ein Rewrite auf FastAPI oder ein groesseres Framework waere fuer diese Struktur unnoetig.
-
-Die App ist bewusst keine rein statische `index.html`: Apache kann statische HTML-Dateien ausliefern, aber Sportwerk braucht weiterhin Python fuer Auth, Jobs, API-Aufrufe, PDF-/DOCX-Erzeugung und Dateioperationen. Die Trennung ist deshalb:
-
-```text
-Browser -> Apache -> Gunicorn -> Flask/Python
-                         |
-                         -> templates/ + static/
-```
-
-`templates/base.html` enthaelt das gemeinsame HTML-Grundgeruest. Die einzelnen Seiten definieren nur noch Inhalt, Zusatz-Styles und benoetigte JavaScript-Bundles. Dadurch bleibt das Frontend sauberer, ohne Backend-Funktionen aus den Python-Skripten zu verlieren.
-
-## Installation
+Install dependencies and start the local development server:
 
 ```bash
-pip install -r requirements.txt
-playwright install chromium
+npm install
+npx prisma generate
+npm run dev
 ```
 
-## Umgebungsvariablen
+Open `http://localhost:3000` with your browser.
 
-Lege lokal optional eine `.env` an. `python app.py` und `python scripts/check-sportwerk.py` laden diese Datei automatisch, echte Umgebungsvariablen behalten Vorrang. `.env` ist durch `.gitignore` ausgeschlossen; `.env.example` enthaelt Platzhalter.
+## Booking and PayPal
 
-Erforderlich fuer Login und produktive Sessions:
+The app includes a booking flow with PayPal checkout and organizer access to bookings in the dashboard.
+
+Required environment variables:
+
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `PAYPAL_ENV` (`sandbox` or `live`)
+- `PAYPAL_WEBHOOK_ID`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `MOLLIE_ENV` (`test` or `live`)
+- `MOLLIE_API_KEY`
+- `TICKET_QR_SECRET`
+
+The booking flow creates a booking record first, then redirects to PayPal, Stripe, or Mollie when an online method is selected. After the provider returns, the checkout page finalizes the booking automatically. PayPal webhooks should be configured for `/api/paypal/webhook`, Stripe webhooks for `/api/stripe/webhook`, and Mollie Pay by Bank webhooks for `/api/payments/mollie/webhook` so the server can reconcile completed, denied, voided, expired, canceled, and refunded payments even when the browser return flow is interrupted.
+
+## Payments and Transfers
+
+Copy `.env.example` to `.env.local` and fill in these variables:
+
+- `DATABASE_URL` and `DIRECT_URL`
+- `APP_URL` and `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `PAYPAL_ENV`
+- `PAYPAL_WEBHOOK_ID`
+- `PAYPAL_CURRENCY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_CURRENCY`
+- `MOLLIE_ENV`
+- `MOLLIE_API_KEY`
+- `MOLLIE_WEBHOOK_SECRET`
+- `MOLLIE_CURRENCY`
+- `MOLLIE_ALLOW_TEST_IN_PRODUCTION`
+- `EMAIL_FROM`
+- `EMAIL_PROVIDER` (`auto`, `resend`, or `smtp`)
+- `RESEND_API_KEY` (recommended for production mail)
+- `EMAIL_SERVER_HOST`
+- `EMAIL_SERVER_PORT`
+- `EMAIL_SERVER_USER`
+- `EMAIL_SERVER_PASSWORD`
+- `EMAIL_SERVER_SECURE` (`true` for port 465, otherwise optional)
+- `BANK_TRANSFER_ACCOUNT_HOLDER`
+- `BANK_TRANSFER_IBAN`
+- `BANK_TRANSFER_BIC`
+- `PAYMENT_REMINDER_INTERVALS`
+- `PAYMENT_AUTO_CANCEL_AFTER_DAYS`
+- `CRON_SECRET`
+- `TICKET_QR_SECRET`
+- `SCANNER_LINK_SECRET`
+
+Then run:
 
 ```bash
-SPORTWERK_SECRET_KEY=
-GOOGLE_OAUTH_CLIENT_ID=
-GOOGLE_OAUTH_CLIENT_SECRET=
-GOOGLE_OAUTH_REDIRECT_URI=
+npm install
+npx prisma generate
+npx prisma migrate dev
+npm run check:system -- --skip-network
+npm run dev
 ```
 
-`SPORTWERK_SECRET_KEY` muss auf dem Server ein fester, langer Zufallswert sein und bei jedem Worker gleich geladen werden. Fehlt dieser Wert im Gunicorn-/Produktionsbetrieb, startet Sportwerk absichtlich nicht, weil Google-OAuth sonst mit `error=state` zufaellig fehlschlaegt.
+## Environment and Deployment Checks
 
-`GOOGLE_OAUTH_REDIRECT_URI` muss exakt zu einer Authorized redirect URI im Google-Cloud-OAuth-Client passen. Fuer eine produktive Domain ist das normalerweise:
-
-```text
-https://deine-sportwerk-domain.example/auth/google/callback
-```
-
-Wenn hier versehentlich `http://127.0.0.1:8000/auth/google/callback`, `localhost` oder ein anderer Port steht, blockiert Google die Anmeldung mit `Fehler 400: redirect_uri_mismatch`.
-
-Sportwerk faengt eine lokale/Loopback-Redirect-URI bei oeffentlichen Requests ab und leitet Google dann mit der aus Host und `X-Forwarded-Proto` abgeleiteten URL weiter. Das ist nur ein Schutznetz: Der Reverse Proxy muss dafuer `Host` und `X-Forwarded-Proto` korrekt weitergeben, und die abgeleitete URL muss in Google Cloud hinterlegt sein.
-
-Einen neuen Wert erzeugst du mit:
+GateKeeper has a central environment validator in `src/lib/env.js` and a CI/CD-friendly system check:
 
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(64))"
+npm run check:system
 ```
 
-Optional:
+The check covers:
+
+- environment structure and required variables
+- database URL format and a `SELECT 1` probe
+- Prisma Client generation
+- Supabase URL, anon key, service role key, and Auth health reachability
+- redirect base URL for `/auth` and `/auth/reset-password`
+- PayPal mode, credentials, currency, and token endpoint reachability
+- Stripe credentials, webhook configuration, currency, and account reachability
+- Mollie mode, API key, currency, and webhook status configuration
+- transactional mail provider availability
+
+Use this when network access is not available, for example in lightweight CI:
 
 ```bash
-PORT=5000
-HOST=0.0.0.0
-SPORTWERK_ALLOWED_DOMAINS=
-SPORTWERK_ALLOWED_EMAILS=
-TRELLO_API_KEY=
-TRELLO_TOKEN=
-TRELLO_ASSIGNED_SOURCE_BOARD_IDS=
-TRELLO_ASSIGNED_TARGET_BOARD_ID=
-TRELLO_ASSIGNED_MEMBER_ID=me
-TRELLO_ASSIGNED_TIMEZONE=Europe/Berlin
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5-mini
-SPORTWERK_LAYOUT_CONFIG_PATH=
-WEASYPRINT_DLL_DIR=
+npm run check:system -- --skip-network
 ```
 
-## Lokaler Start
+Production rules:
 
-```bash
-python app.py
-```
+- `DATABASE_URL`, `DIRECT_URL`, `APP_URL`, `NEXT_PUBLIC_APP_URL`, Supabase keys, PayPal config including `PAYPAL_WEBHOOK_ID`, Stripe config including `STRIPE_WEBHOOK_SECRET`, mail config, `TICKET_QR_SECRET`, `SCANNER_LINK_SECRET`, and `CRON_SECRET` must be explicit.
+- `APP_URL` and `NEXT_PUBLIC_APP_URL` must be HTTPS, must not point to localhost, must not end with a slash, and should match.
+- `PAYPAL_ENV=sandbox` is rejected in production unless `PAYPAL_ALLOW_SANDBOX_IN_PRODUCTION=true` is intentionally set.
+- `MOLLIE_ENV=test` is rejected in production when `MOLLIE_API_KEY` is set unless `MOLLIE_ALLOW_TEST_IN_PRODUCTION=true` is intentionally set.
+- Missing mail provider credentials are a production error because ticket/payment/reminder/cancellation mails depend on them.
+- Runtime code no longer falls back to database URLs, ticket secrets, or scanner secrets derived from unrelated env vars in production.
 
-Standardadresse:
+Manual dashboard checks before production:
 
-```text
-http://localhost:5000
-```
+- Supabase Dashboard > Authentication > URL Configuration:
+  - Site URL must be `APP_URL`.
+  - Additional Redirect URLs must include `${APP_URL}/auth` and `${APP_URL}/auth/reset-password`.
+  - Local development may additionally include `http://localhost:3000/auth`, `http://localhost:3000/auth/reset-password`, `http://localhost:3001/auth`, and `http://localhost:3001/auth/reset-password`.
+- Supabase Dashboard > Authentication > SMTP Settings:
+  - Configure the sender domain and SMTP provider used by Supabase Auth signup/password-reset mails.
+- PayPal Developer Dashboard:
+  - Production must use live app credentials when `PAYPAL_ENV=live`.
+  - Sandbox credentials are only acceptable for staging or intentional production tests.
+  - Create a webhook endpoint for `${APP_URL}/api/paypal/webhook`.
+  - Subscribe to `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.DECLINED`, `PAYMENT.CAPTURE.REFUNDED`, `CHECKOUT.ORDER.COMPLETED`, and `CHECKOUT.ORDER.VOIDED`.
+  - Store the resulting webhook ID as `PAYPAL_WEBHOOK_ID`.
+- Stripe Dashboard:
+  - Production must use live secret keys.
+  - Create a webhook endpoint for `${APP_URL}/api/stripe/webhook`.
+  - Subscribe to `checkout.session.completed`, `checkout.session.expired`, `payment_intent.succeeded`, `payment_intent.payment_failed`, and `payment_intent.canceled`.
+  - Store the signing secret as `STRIPE_WEBHOOK_SECRET`.
+- Mollie Dashboard:
+  - Use a test API key for local or staging sandbox checks and a live API key only for production.
+  - Ensure Pay by Bank is available for the Mollie profile before enabling `MOLLIE_PAY_BY_BANK` for public events.
+  - The checkout request sends `${APP_URL}/api/payments/mollie/webhook` as the webhook URL.
+  - The webhook only needs to deliver Mollie's payment `id`; GateKeeper reloads the payment status server-side before changing booking state.
+- Mail provider dashboard:
+  - Verify the sender domain used by `EMAIL_FROM`.
+  - For Resend, the API key must belong to the verified domain.
+  - For SMTP, host, port, user, password, and TLS mode must match the provider.
+- Vercel Project > Settings > Environment Variables:
+  - Set all production variables from `.env.example` without placeholder values.
+  - Do not expose server-only secrets as `NEXT_PUBLIC_*`.
 
-Alternativ:
+For manual payment flows:
 
-```bash
-python scripts/run-sportwerk.py --port 8000
-```
+- `Rechnung` and `Banküberweisung` are stored as open bookings with a payment reference.
+- The organizer can mark them as paid in the dashboard.
+- Payment reminders can be resent from the bookings view.
+- The confirmation page shows the bank details from the env vars above.
+- Automatic reminder jobs run through `POST /api/cron/payment-reminders` or `GET /api/cron/payment-reminders`.
+- Operational cleanup runs through `POST /api/cron/maintenance` or `GET /api/cron/maintenance`.
+- Protect that endpoint with `CRON_SECRET` in production.
+- The default reminder schedule is `3,7,14` days after booking unless you override it.
+- Manual bookings are automatically cancelled after `PAYMENT_AUTO_CANCEL_AFTER_DAYS` days, default `30`.
+- Maintenance removes expired rate-limit buckets, old system events, and expired/revoked scanner link sessions. Ticket bookings and scan logs are retained.
 
-## Produktionsstart mit Apache
+Vercel setup:
 
-Auf einem Linux-Server kann die App als WSGI-Anwendung gestartet werden:
+- The repo includes `vercel.json` with daily crons for payment reminders at `07:00 UTC` and maintenance at `02:30 UTC`.
+- Vercel cron requests can call `/api/cron/payment-reminders` and `/api/cron/maintenance` directly.
+- For manual tests or external schedulers, send `x-cron-secret: <CRON_SECRET>` or `Authorization: Bearer <CRON_SECRET>`.
+- Do not put cron secrets in query strings in production.
 
-```bash
-gunicorn -w 2 -b 127.0.0.1:${PORT:-5000} app:app
-```
+For PayPal:
 
-Apache sollte dabei als Reverse Proxy vor Gunicorn laufen. Gunicorn bedient die Python-App lokal, Apache uebernimmt Domain, TLS und Weiterleitung.
+- Set `PAYPAL_ENV=sandbox` for testing or `live` for production.
+- Make sure the organizer profile has a PayPal email if you want funds to go directly to the organizer.
 
-Wichtig: Starte Gunicorn ueber `app:app` aus dem Sportwerk-Root, nicht direkt ueber `Pressespiegel.web_app:app`. `web_app.py` laedt die `.env` zwar ebenfalls als Schutz, aber `app:app` ist der vorgesehene Einstiegspunkt.
+For Stripe:
 
-Beispiel fuer einen systemd-Service:
+- Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` before offering Stripe checkout.
+- Stripe checkout currently collects card payments through Stripe Checkout.
+- Organizer payment-method selection shows estimated provider transaction costs for PayPal and Stripe.
+- GateKeeper calculates service fees centrally and shows the customer total before checkout.
 
-```ini
-[Unit]
-Description=Sportwerk Flask application
-After=network.target
+For email delivery:
 
-[Service]
-WorkingDirectory=/var/www/sportwerk
-EnvironmentFile=/var/www/sportwerk/.env
-ExecStart=/var/www/sportwerk/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 app:app
-Restart=always
+- Production should configure either Resend (`RESEND_API_KEY` + `EMAIL_FROM`) or SMTP (`EMAIL_SERVER_HOST`, `EMAIL_SERVER_USER`, `EMAIL_SERVER_PASSWORD`, `EMAIL_FROM`).
+- `EMAIL_PROVIDER=auto` tries Resend first when configured, then SMTP. Use `EMAIL_PROVIDER=smtp` or `EMAIL_PROVIDER=resend` to force one provider.
+- Registration and password-reset mails are sent by Supabase Auth directly for maximum stability.
+- Configure Supabase Auth SMTP, sender identity, and allowed redirect URLs in the Supabase project.
+- GateKeeper's Resend/SMTP settings are used for ticket, payment, reminder, cancellation, and event-alert mails.
+- Send a live transactional smoke test with `npm run mail:test -- --to you@example.com` after setting `EMAIL_PROVIDER`, `EMAIL_FROM`, and the provider credentials.
 
-[Install]
-WantedBy=multi-user.target
-```
+For ticket security:
 
-Beispiel fuer einen Apache VirtualHost:
+- Set a strong `TICKET_QR_SECRET` in every environment.
+- Ticket QR codes are signed and the check-in flow rejects tampered codes.
 
-```apache
-<VirtualHost *:80>
-    ServerName example.com
+## Security Hardening
 
-    ProxyPreserveHost On
-    RequestHeader set X-Forwarded-Proto "https"
-    RequestHeader set X-Forwarded-Port "443"
-
-    ProxyPass / http://127.0.0.1:5000/
-    ProxyPassReverse / http://127.0.0.1:5000/
-
-    ErrorLog ${APACHE_LOG_DIR}/sportwerk_error.log
-    CustomLog ${APACHE_LOG_DIR}/sportwerk_access.log combined
-</VirtualHost>
-```
-
-Dafuer muessen die Apache-Module `proxy`, `proxy_http`, `headers` und fuer HTTPS ueblicherweise `ssl` aktiv sein. In Produktion sollte Gunicorn am besten nur lokal auf `127.0.0.1:${PORT:-5000}` lauschen und Apache oeffentlich erreichbar sein.
-
-## Projektstruktur
-
-- `app.py`: Root-Einstiegspunkt fuer lokalen Start und WSGI-Server.
-- `Pressespiegel/web_app.py`: Flask-Routen, Auth, Job-APIs und Download-Endpunkte.
-- `Pressespiegel/main.py`: Pressespiegel-Crawling, Rendering und PDF-Erzeugung.
-- `templates/base.html`: gemeinsames HTML-Grundgeruest fuer Styles, Session-Bar und Script-Bloecke.
-- `templates/`: Jinja-HTML fuer Dashboard, Login, Fehlerseite und Tools.
-- `static/`: CSS, JavaScript, React-Bundles, JSX-Quellen und Vendor-Dateien.
-- `Trello/`: Trello-Synchronisierung und KI-Zusammenfassung.
-- `Trello/assigned.py`: kopiert Karten aus konfigurierten Boards, die dem Trello-Token-Nutzer oder einer konfigurierten Member-ID zugewiesen sind, in eigene Ziellisten.
-- `Teilnahmebedingungen/`: DOCX-Erzeugung fuer Teilnahmebedingungen.
-- `scripts/check-sportwerk.py`: lokaler Readiness-Check.
-- `scripts/build-jsx.js`: kompiliert JSX-Dateien nach `static/compiled/`.
-
-Nach Aenderungen an `static/*.jsx`:
-
-```bash
-node scripts/build-jsx.js
-```
-
-Readiness-Check:
-
-```bash
-python scripts/check-sportwerk.py
-```
-
-## Trello: Zugewiesene Karten kopieren
-
-Die Trello-Seite enthaelt die Aktion `Meine Karten`. Sie liest alle offenen Karten der konfigurierten Quellboards, filtert auf `TRELLO_ASSIGNED_MEMBER_ID` und kopiert nur diese Karten in das Zielboard.
-
-Standardmaessig ist `TRELLO_ASSIGNED_MEMBER_ID=me`; damit wird der Nutzer des Trello-Tokens verwendet. Die Einsortierung laeuft dynamisch anhand der aktuellen Kalenderwoche in `TRELLO_ASSIGNED_TIMEZONE`:
-
-- Karten mit offenem abgelaufenem Karten- oder Checklist-Due-Date landen in `over due`.
-- Karten mit offenem Karten- oder Checklist-Due-Date innerhalb der aktuellen KW landen in `Diese Woche`.
-- Alle anderen Karten landen in einer Liste mit dem Namen des Quellboards.
-
-Das Skript schreibt eine `Sportwerk-Source-Card-ID` in die kopierten Karten. Dadurch werden Karten bei spaeteren Laeufen nicht doppelt angelegt.
-
-## Trello: Montagsmeeting automatisch vorbereiten
-
-Das Trello-Meeting-Tool kann ohne interaktiven SW-Agent ueber den Scheduled-Runner gestartet werden:
-
-```bash
-python scripts/run-trello-meeting.py
-```
-
-Vor einer Cron- oder Timer-Einrichtung laesst sich die Konfiguration pruefen, ohne Trello zu veraendern:
-
-```bash
-python scripts/run-trello-meeting.py --check-config
-```
-
-Fuer die automatische Ausfuehrung jeden Montag um 06:00 Uhr muss der Server in `Europe/Berlin` laufen oder der Timer entsprechend diese Zeitzone verwenden. Ein Cron-Eintrag auf dem Produktionsserver sieht so aus:
-
-```cron
-0 6 * * 1 cd /var/www/sportwerk && /var/www/sportwerk/.venv/bin/python scripts/run-trello-meeting.py >> /var/log/sportwerk-trello-meeting.log 2>&1
-```
+- Mutating API requests are checked for same-origin access before route handlers run.
+- Public write-heavy endpoints have IP rate limits and request-size limits.
+- Login, registration, booking, event creation, and event updates validate JSON size server-side.
+- Bot honeypot fields are included in public forms and rejected server-side.
+- Security headers are set globally through `src/proxy.js`.

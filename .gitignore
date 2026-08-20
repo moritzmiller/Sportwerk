@@ -1,15 +1,53 @@
-*.exe
-*.pdf
-*.pkg
-*.csv
-.idea/
-.dev-logs/
-dev-server-*.log
-__pycache__/
+# dependencies
+/node_modules
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production and build artifacts
+/build
 build/
 dist/
 instance/
 *.db
+
+# generated files
+/src/generated/prisma
+next-env.d.ts
+*.tsbuildinfo
+
+# logs and debug output
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.next-dev.log
+dev-server-*.log
+next-dev-*.log
+.dev-logs/
+__pycache__/
+
+# local tools and IDEs
+.idea/
+.DS_Store
+
+# secrets and local env
+.env
+.env.*
+!.env.example
+.env.local
 credentials.json
 token.json
 **/credentials.json
@@ -17,8 +55,13 @@ token.json
 speicher.json
 meetings_index.json
 meetings_archiv.json
-.env
-.env.*
-!.env.example
-.env.local
-node_modules/
+*.pem
+
+# generated exports/installers
+*.exe
+*.pdf
+*.pkg
+*.csv
+
+# vercel
+.vercel

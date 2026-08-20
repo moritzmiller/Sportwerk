@@ -1,0 +1,1713 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                       String                   @id
+  email                    String                   @unique
+  name                     String?
+  paypalEmail              String?
+  billingName              String?
+  billingStreet            String?
+  billingStreet2           String?
+  billingPostalCode        String?
+  billingCity              String?
+  billingCountry           String                   @default("DE")
+  preferredPaymentMethod   PaymentMethod            @default(PAYPAL)
+  createdAt                DateTime                 @default(now())
+  disabledAt               DateTime?
+  disabledById             String?
+  disabledReason           String?
+  role                     Role                     @default(VISITOR)
+  events                   Event[]
+  eventFavorites           EventFavorite[]
+  eventViews               EventView[]
+  eventAlerts              EventAlert[]
+  eventImpressions         EventImpression[]
+  eventInteractions        EventInteraction[]
+  eventPreferences         UserEventPreference[]
+  eventAuditLogs           EventAuditLog[]          @relation("EventAuditLogActor")
+  bookings                 Booking[]                @relation("BookingAttendee")
+  checkedInBookings        Booking[]                @relation("BookingCheckInActor")
+  checkedInTickets         Ticket[]                 @relation("TicketCheckInActor")
+  bookingScans             BookingScan[]            @relation("BookingScanActor")
+  createdScannerLinks      EventScannerLink[]       @relation("ScannerLinkCreator")
+  organizations            Organization[]           @relation("OrganizationOwner")
+  organizationReviews      Organization[]           @relation("OrganizationReviewActor")
+  organizationMemberships  OrganizationMember[]
+  eventMemberships         EventMember[]
+  venues                   Venue[]                  @relation("VenueOwner")
+  venueReviews             Venue[]                  @relation("VenueReviewActor")
+  crmNotes                 CustomerNote[]           @relation("CustomerNoteOrganizer")
+  crmTasks                 CustomerTask[]           @relation("CustomerTaskOrganizer")
+  erichRoleAssignments     ErichRoleAssignment[]    @relation("ErichRoleAssignmentUser")
+  erichAthletes            ErichAthlete[]           @relation("ErichAthleteAccount")
+  erichTrainers            ErichTrainer[]           @relation("ErichTrainerAccount")
+  erichRegistrationBatches ErichRegistrationBatch[] @relation("ErichRegistrationBatchAccount")
+  erichBillingProfiles     ErichBillingProfile[]    @relation("ErichBillingProfileAccount")
+  erichPayments            ErichPayment[]           @relation("ErichPaymentAccount")
+  erichAuditLogs           ErichAuditLog[]          @relation("ErichAuditLogActor")
+
+  @@index([disabledAt])
+}
+
+model Event {
+  id                 Int         @id @default(autoincrement())
+  title              String
+  description        String?
+  imageUrl           String?
+  location           String
+  city               String      @default("Dresden")
+  category           Category    @default(SONSTIGES)
+  status             EventStatus @default(PUBLISHED)
+  allowedPaymentMethods PaymentMethod[] @default([STRIPE, MOLLIE_PAY_BY_BANK, PAYPAL, INVOICE, BANK_TRANSFER])
+  startDate          DateTime
+  price              Float
+  capacity           Int?
+  soldTickets        Int         @default(0)
+  viewCount          Int         @default(0)
+  publishedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  duplicateOfId      Int?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @default(now()) @updatedAt
+  ownerId            String
+  organizationId     String?
+  venueId            String?
+
+  bookings     Booking[]
+  tickets      Ticket[]
+  promoCodes   PromoCode[]
+  favorites    EventFavorite[]
+  views        EventView[]
+  alerts       EventAlert[]
+  impressions  EventImpression[]
+  interactions EventInteraction[]
+  auditLogs    EventAuditLog[]
+  scanLogs     BookingScan[]
+  scannerLinks EventScannerLink[]
+  ticketTypes  EventTicketType[]
+  owner        User               @relation(fields: [ownerId], references: [id])
+  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  venue        Venue?             @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  duplicateOf  Event?             @relation("EventDuplicateOf", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates   Event[]            @relation("EventDuplicateOf")
+  members      EventMember[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([startDate])
+  @@index([organizationId])
+  @@index([venueId])
+}
+
+model Booking {
+  id                        String           @id @default(cuid())
+  eventId                   Int
+  attendeeId                String?
+  purchaserName             String
+  purchaserEmail            String
+  purchaserPhone            String?
+  notes                     String?
+  newsletter                Boolean          @default(false)
+  quantity                  Int              @default(1)
+  currency                  String           @default("EUR")
+  unitPrice                 Float
+  serviceFee                Float            @default(0)
+  discountAmount            Float            @default(0)
+  totalAmount               Float
+  billingName               String?
+  billingStreet             String?
+  billingStreet2            String?
+  billingPostalCode         String?
+  billingCity               String?
+  billingCountry            String           @default("DE")
+  paymentMethod             PaymentMethod    @default(PAYPAL)
+  status                    BookingStatus    @default(AWAITING_PAYMENT)
+  paymentProvider           String           @default("PAYPAL")
+  paymentReference          String?
+  paidAt                    DateTime?
+  paymentReminderCount      Int              @default(0)
+  lastPaymentReminderAt     DateTime?
+  paymentCancelledAt        DateTime?
+  paymentCancellationReason String?
+  checkedInAt               DateTime?
+  checkedInById             String?
+  checkedInVia              String?
+  ticketTypeId              String?
+  ticketTypeName            String?
+  promoCodeId               String?
+  promoCode                 String?
+  transferToName            String?
+  transferToEmail           String?
+  paypalOrderId             String?          @unique
+  paypalCaptureId           String?          @unique
+  paypalApprovalUrl         String?
+  paypalStatus              String?
+  stripeCheckoutSessionId   String?          @unique
+  stripePaymentIntentId     String?          @unique
+  stripeStatus              String?
+  providerPayload           Json?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  event                     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType                EventTicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+  promo                     PromoCode?       @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  attendee                  User?            @relation("BookingAttendee", fields: [attendeeId], references: [id], onDelete: SetNull)
+  checkedInBy               User?            @relation("BookingCheckInActor", fields: [checkedInById], references: [id], onDelete: SetNull)
+  scanLogs                  BookingScan[]
+  tickets                   Ticket[]
+  payments                  Payment[]
+
+  @@index([eventId])
+  @@index([attendeeId])
+  @@index([status])
+  @@index([checkedInAt])
+  @@index([ticketTypeId])
+  @@index([promoCodeId])
+}
+
+model Ticket {
+  id            String           @id @default(cuid())
+  eventId       Int
+  bookingId     String
+  ticketTypeId  String?
+  ticketTypeName String?
+  ticketNumber  Int
+  holderName    String?
+  status        TicketStatus     @default(VALID)
+  checkedInAt   DateTime?
+  checkedInById String?
+  checkedInVia  String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  booking     Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ticketType  EventTicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+  checkedInBy User?            @relation("TicketCheckInActor", fields: [checkedInById], references: [id], onDelete: SetNull)
+  scanLogs    BookingScan[]
+
+  @@unique([bookingId, ticketNumber])
+  @@index([eventId, status])
+  @@index([bookingId])
+  @@index([ticketTypeId])
+  @@index([checkedInAt])
+}
+
+model EventTicketType {
+  id            String   @id @default(cuid())
+  eventId       Int
+  name          String
+  description   String?
+  price         Float
+  currency      String   @default("EUR")
+  quota         Int?
+  soldCount     Int      @default(0)
+  maxPerBooking Int?
+  isDefault     Boolean  @default(false)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+  tickets  Ticket[]
+
+  @@index([eventId, sortOrder])
+  @@index([eventId, isDefault])
+}
+
+model Organization {
+  id                      String             @id @default(cuid())
+  name                    String
+  slug                    String             @unique
+  description             String?
+  verificationStatus      VerificationStatus @default(PENDING)
+  verificationRequestedAt DateTime?
+  reviewedAt              DateTime?
+  reviewedById            String?
+  reviewNotes             String?
+  ownerId                 String
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  owner      User                 @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  reviewedBy User?                @relation("OrganizationReviewActor", fields: [reviewedById], references: [id], onDelete: SetNull)
+  members    OrganizationMember[]
+  events     Event[]
+  venues     Venue[]
+
+  @@index([ownerId])
+  @@index([verificationStatus])
+}
+
+model OrganizationMember {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrganizationRole @default(MEMBER)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+}
+
+model EventMember {
+  id        String          @id @default(cuid())
+  eventId   Int
+  userId    String
+  role      EventMemberRole @default(VIEWER)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@index([eventId, role])
+}
+
+model Venue {
+  id                      String             @id @default(cuid())
+  name                    String
+  address                 String?
+  city                    String?
+  notes                   String?
+  verificationStatus      VerificationStatus @default(PENDING)
+  verificationRequestedAt DateTime?
+  reviewedAt              DateTime?
+  reviewedById            String?
+  reviewNotes             String?
+  organizationId          String?
+  ownerId                 String
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  owner        User          @relation("VenueOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  reviewedBy   User?         @relation("VenueReviewActor", fields: [reviewedById], references: [id], onDelete: SetNull)
+  events       Event[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+  @@index([verificationStatus])
+}
+
+model CustomerNote {
+  id            String   @id @default(cuid())
+  organizerId   String
+  customerEmail String
+  content       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organizer User @relation("CustomerNoteOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId, customerEmail, createdAt])
+}
+
+model CustomerTask {
+  id            String    @id @default(cuid())
+  organizerId   String
+  customerEmail String
+  title         String
+  description   String?
+  dueAt         DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  organizer User @relation("CustomerTaskOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId, customerEmail, completedAt])
+}
+
+model EventFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  eventId   Int
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+}
+
+model EventView {
+  id       String   @id @default(cuid())
+  userId   String?
+  eventId  Int
+  viewedAt DateTime @default(now())
+  source   String?
+  referrer String?
+
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+model EventAlert {
+  id        String    @id @default(cuid())
+  userId    String
+  eventId   Int?
+  query     String?
+  city      String?
+  category  Category?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([eventId])
+  @@index([active])
+}
+
+model EventImpression {
+  id            String   @id @default(cuid())
+  userId        String?
+  eventId       Int
+  feedSessionId String?
+  source        String?
+  position      Int?
+  context       Json?
+  createdAt     DateTime @default(now())
+
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([eventId, createdAt])
+  @@index([feedSessionId])
+  @@index([createdAt])
+}
+
+model EventInteraction {
+  id        String               @id @default(cuid())
+  userId    String?
+  eventId   Int
+  type      EventInteractionType
+  weight    Float                @default(1)
+  source    String?
+  metadata  Json?
+  createdAt DateTime             @default(now())
+
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([eventId, createdAt])
+  @@index([type, createdAt])
+  @@index([createdAt])
+}
+
+model UserEventPreference {
+  id           String                        @id @default(cuid())
+  userId       String
+  scope        RecommendationPreferenceScope
+  target       String
+  weight       Float                         @default(0)
+  signalCount  Int                           @default(0)
+  lastSignalAt DateTime?
+  createdAt    DateTime                      @default(now())
+  updatedAt    DateTime                      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, target])
+  @@index([userId, scope, weight])
+  @@index([lastSignalAt])
+}
+
+model EventAuditLog {
+  id        String   @id @default(cuid())
+  eventId   Int?
+  actorId   String?
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  actor User?  @relation("EventAuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model BookingScan {
+  id           String   @id @default(cuid())
+  bookingId    String?
+  ticketId     String?
+  eventId      Int?
+  scannerId    String?
+  scannerEmail String?
+  scannerName  String?
+  source       String?
+  rawInput     String
+  status       String
+  warning      String?
+  details      Json?
+  createdAt    DateTime @default(now())
+
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ticket  Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  event   Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  scanner User?    @relation("BookingScanActor", fields: [scannerId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId, createdAt])
+  @@index([ticketId, createdAt])
+  @@index([eventId, createdAt])
+  @@index([scannerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model EventScannerLink {
+  id            String    @id @default(cuid())
+  eventId       Int
+  tokenHash     String    @unique
+  label         String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  lastUsedAt    DateTime?
+  lastUsedIp    String?
+  lastUserAgent String?
+
+  event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("ScannerLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([eventId, expiresAt])
+  @@index([eventId, revokedAt])
+  @@index([createdById])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
+model SystemEvent {
+  id         String    @id @default(cuid())
+  level      String
+  area       String
+  message    String
+  details    Json?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([level, createdAt])
+  @@index([area, createdAt])
+  @@index([resolvedAt])
+}
+
+model ErichEvent {
+  id        String           @id @default(cuid())
+  name      String
+  slug      String           @unique
+  startsAt  DateTime
+  endsAt    DateTime
+  timezone  String           @default("Europe/Berlin")
+  status    ErichEventStatus @default(DRAFT)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  roleAssignments      ErichRoleAssignment[]
+  championships        ErichChampionship[]
+  clubImports          ErichClubImport[]
+  raceDefinitions      ErichRaceDefinition[]
+  pricePhases          ErichPricePhase[]
+  registrationBatches  ErichRegistrationBatch[]
+  raceEntries          ErichRaceEntry[]
+  teamEntries          ErichTeamEntry[]
+  licenseImports       ErichLicenseImport[]
+  tickets              ErichTicket[]
+  importJobs           ErichImportJob[]
+  exportJobs           ErichExportJob[]
+  auditLogs            ErichAuditLog[]
+  systemConfigurations ErichSystemConfiguration[]
+
+  @@index([status])
+  @@index([startsAt])
+}
+
+model ErichRoleAssignment {
+  id        String    @id @default(cuid())
+  eventId   String
+  userId    String
+  role      ErichRole
+  createdAt DateTime  @default(now())
+
+  event ErichEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User       @relation("ErichRoleAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId, role])
+  @@index([userId, role])
+}
+
+model ErichChampionship {
+  id        String              @id @default(cuid())
+  eventId   String
+  level     ErichValuationLevel
+  nameDe    String
+  nameEn    String
+  sortOrder Int                 @default(0)
+
+  event ErichEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, level])
+  @@index([eventId, sortOrder])
+}
+
+model ErichClub {
+  id                     String    @id @default(cuid())
+  externalFederationId   String?
+  officialName           String
+  countryCode            String
+  federalState           String?
+  stateRowingAssociation String?
+  stateAssociationMember Boolean   @default(false)
+  isGermanClub           Boolean   @default(false)
+  isCentralGermanClub    Boolean   @default(false)
+  active                 Boolean   @default(true)
+  validFrom              DateTime?
+  validUntil             DateTime?
+  sourceImportId         String?
+  sourceRow              Json?
+  searchText             String
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  sourceImport ErichClubImport? @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  athletes     ErichAthlete[]
+  trainers     ErichTrainer[]
+
+  @@index([officialName])
+  @@index([countryCode, active])
+  @@index([isGermanClub, stateAssociationMember])
+  @@index([isCentralGermanClub, stateAssociationMember])
+}
+
+model ErichClubImport {
+  id               String            @id @default(cuid())
+  eventId          String
+  fileAssetId      String?
+  status           ErichImportStatus @default(UPLOADED)
+  originalFileName String?
+  importedAt       DateTime?
+  importedById     String?
+  validationReport Json?
+  createdAt        DateTime          @default(now())
+
+  event ErichEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  clubs ErichClub[]
+
+  @@index([eventId, createdAt])
+  @@index([status])
+}
+
+model ErichRaceDefinition {
+  id                        String           @id @default(cuid())
+  eventId                   String
+  raceNumber                Int
+  gender                    ErichRaceGender?
+  classLabel                String?
+  distanceLabel             String?
+  includesErich             Boolean          @default(false)
+  includesDm                Boolean          @default(false)
+  includesMdm               Boolean          @default(false)
+  isLightweight             Boolean          @default(false)
+  isPara                    Boolean          @default(false)
+  isTeamRace                Boolean          @default(false)
+  requiredTeamSize          Int?
+  sameClubRequired          Boolean?
+  mixedClubsAllowed         Boolean?
+  maleCount                 Int?
+  femaleCount               Int?
+  minimumBirthYear          Int?
+  maximumBirthYear          Int?
+  higherAgeClassAllowed     Boolean          @default(false)
+  higherAgeMinimumBirthYear Int?
+  fallbackRaceId            String?
+  status                    ErichRaceStatus  @default(REVIEW_REQUIRED)
+  reviewReason              String?
+  sourceSheet               String?
+  sourceRow                 Int?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+
+  event            ErichEvent                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fallbackRace     ErichRaceDefinition?       @relation("ErichRaceFallback", fields: [fallbackRaceId], references: [id], onDelete: SetNull)
+  fallbackFor      ErichRaceDefinition[]      @relation("ErichRaceFallback")
+  versions         ErichRaceVersion[]
+  eligibilityRules ErichRaceEligibilityRule[]
+  prices           ErichRacePrice[]
+  raceEntries      ErichRaceEntry[]
+  teamEntries      ErichTeamEntry[]
+
+  @@unique([eventId, raceNumber])
+  @@index([eventId, status])
+  @@index([raceNumber])
+  @@index([gender])
+}
+
+model ErichRaceVersion {
+  id               String   @id @default(cuid())
+  raceDefinitionId String
+  version          Int
+  snapshot         Json
+  changeReason     String
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  raceDefinition ErichRaceDefinition @relation(fields: [raceDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([raceDefinitionId, version])
+  @@index([createdAt])
+}
+
+model ErichRaceEligibilityRule {
+  id               String   @id @default(cuid())
+  raceDefinitionId String
+  ruleType         String
+  ruleConfig       Json
+  explanationDe    String?
+  explanationEn    String?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  raceDefinition ErichRaceDefinition @relation(fields: [raceDefinitionId], references: [id], onDelete: Cascade)
+
+  @@index([raceDefinitionId, active])
+  @@index([ruleType])
+}
+
+model ErichPricePhase {
+  id        String    @id @default(cuid())
+  eventId   String
+  name      String
+  startsAt  DateTime?
+  endsAt    DateTime?
+  sortOrder Int       @default(0)
+  active    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  event  ErichEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  prices ErichRacePrice[]
+
+  @@unique([eventId, name])
+  @@index([eventId, sortOrder])
+  @@index([active])
+}
+
+model ErichRacePrice {
+  id               String              @id @default(cuid())
+  raceDefinitionId String
+  pricePhaseId     String
+  valuationLevel   ErichValuationLevel
+  amountCents      Int
+  currency         String              @default("EUR")
+  sourceSheet      String?
+  sourceRow        Int?
+  createdAt        DateTime            @default(now())
+
+  raceDefinition ErichRaceDefinition @relation(fields: [raceDefinitionId], references: [id], onDelete: Cascade)
+  pricePhase     ErichPricePhase     @relation(fields: [pricePhaseId], references: [id], onDelete: Cascade)
+
+  @@unique([raceDefinitionId, pricePhaseId, valuationLevel])
+  @@index([pricePhaseId])
+}
+
+model ErichAthlete {
+  id                  String          @id @default(cuid())
+  accountId           String
+  clubId              String
+  firstName           String
+  lastName            String
+  gender              ErichRaceGender
+  birthDate           DateTime
+  birthYear           Int
+  nationalityCode     String
+  email               String?
+  lightweight         Boolean         @default(false)
+  parasport           Boolean         @default(false)
+  germanLicenseNumber String?
+  portraitFileAssetId String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  account              User                       @relation("ErichAthleteAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  club                 ErichClub                  @relation(fields: [clubId], references: [id], onDelete: Restrict)
+  raceEntries          ErichRaceEntry[]
+  teamMembers          ErichTeamMember[]
+  eligibilityDecisions ErichEligibilityDecision[]
+  tickets              ErichTicket[]
+
+  @@index([accountId])
+  @@index([clubId])
+  @@index([birthYear])
+  @@index([lastName, firstName])
+  @@index([germanLicenseNumber])
+}
+
+model ErichTrainer {
+  id              String   @id @default(cuid())
+  accountId       String
+  clubId          String?
+  firstName       String
+  lastName        String
+  nationalityCode String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account User          @relation("ErichTrainerAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  club    ErichClub?    @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  tickets ErichTicket[]
+
+  @@index([accountId])
+  @@index([clubId])
+  @@index([lastName, firstName])
+}
+
+model ErichRegistrationBatch {
+  id                String                  @id @default(cuid())
+  eventId           String
+  accountId         String
+  status            ErichRegistrationStatus @default(TEMPORARY)
+  expiresAt         DateTime?
+  checkoutExpiresAt DateTime?
+  submittedAt       DateTime?
+  paidAt            DateTime?
+  invalidatedAt     DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  event           ErichEvent            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  account         User                  @relation("ErichRegistrationBatchAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  raceEntries     ErichRaceEntry[]
+  teamEntries     ErichTeamEntry[]
+  billingProfiles ErichBillingProfile[]
+  payments        ErichPayment[]
+  invoices        ErichInvoice[]
+  refundCases     ErichRefundCase[]
+
+  @@index([eventId, status])
+  @@index([accountId, createdAt])
+}
+
+model ErichRaceEntry {
+  id                     String               @id @default(cuid())
+  eventId                String
+  registrationBatchId    String
+  athleteId              String
+  raceDefinitionId       String
+  raceNumber             Int
+  targetTimeMinutes      Int
+  targetTimeSeconds      Int
+  targetTimeMilliseconds Int
+  targetTimeTotalMs      Int
+  status                 ErichRaceEntryStatus @default(ACTIVE)
+  priceCents             Int
+  currency               String               @default("EUR")
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  event                ErichEvent                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationBatch    ErichRegistrationBatch     @relation(fields: [registrationBatchId], references: [id], onDelete: Cascade)
+  athlete              ErichAthlete               @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  raceDefinition       ErichRaceDefinition        @relation(fields: [raceDefinitionId], references: [id], onDelete: Restrict)
+  valuations           ErichRaceEntryValuation[]
+  eligibilityDecisions ErichEligibilityDecision[]
+  tickets              ErichTicket[]
+  invoiceLines         ErichInvoiceLine[]
+
+  @@unique([athleteId, eventId, raceNumber])
+  @@index([registrationBatchId])
+  @@index([eventId, raceNumber])
+  @@index([status])
+}
+
+model ErichRaceEntryValuation {
+  id                    String                 @id @default(cuid())
+  raceEntryId           String
+  level                 ErichValuationLevel
+  status                ErichEligibilityStatus
+  dependsOnLicenseCheck Boolean                @default(false)
+  decisionSnapshot      Json?
+  createdAt             DateTime               @default(now())
+
+  raceEntry ErichRaceEntry @relation(fields: [raceEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([raceEntryId, level])
+  @@index([level, status])
+}
+
+model ErichTeamEntry {
+  id                  String               @id @default(cuid())
+  eventId             String
+  registrationBatchId String
+  raceDefinitionId    String
+  raceNumber          Int
+  teamName            String
+  status              ErichTeamEntryStatus @default(TEMPORARY)
+  priceCents          Int
+  currency            String               @default("EUR")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  event             ErichEvent             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationBatch ErichRegistrationBatch @relation(fields: [registrationBatchId], references: [id], onDelete: Cascade)
+  raceDefinition    ErichRaceDefinition    @relation(fields: [raceDefinitionId], references: [id], onDelete: Restrict)
+  members           ErichTeamMember[]
+  tickets           ErichTicket[]
+  invoiceLines      ErichInvoiceLine[]
+
+  @@unique([registrationBatchId, teamName])
+  @@index([eventId, raceNumber])
+  @@index([status])
+}
+
+model ErichTeamMember {
+  id          String   @id @default(cuid())
+  teamEntryId String
+  athleteId   String
+  position    Int
+  createdAt   DateTime @default(now())
+
+  teamEntry ErichTeamEntry @relation(fields: [teamEntryId], references: [id], onDelete: Cascade)
+  athlete   ErichAthlete   @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+
+  @@unique([teamEntryId, athleteId])
+  @@unique([teamEntryId, position])
+  @@index([athleteId])
+}
+
+model ErichBillingProfile {
+  id                  String   @id @default(cuid())
+  accountId           String
+  registrationBatchId String?
+  recipient           String
+  firstName           String
+  lastName            String
+  company             String?
+  street              String
+  houseNumber         String
+  postalCode          String
+  city                String
+  countryCode         String
+  invoiceEmail        String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  account           User                    @relation("ErichBillingProfileAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  registrationBatch ErichRegistrationBatch? @relation(fields: [registrationBatchId], references: [id], onDelete: SetNull)
+  invoices          ErichInvoice[]
+
+  @@index([accountId])
+  @@index([registrationBatchId])
+}
+
+model ErichPayment {
+  id                  String             @id @default(cuid())
+  eventId             String
+  registrationBatchId String
+  accountId           String
+  provider            String
+  providerPaymentId   String?
+  amountCents         Int
+  feeCents            Int                @default(0)
+  currency            String             @default("EUR")
+  status              ErichPaymentStatus @default(OPEN)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  registrationBatch ErichRegistrationBatch @relation(fields: [registrationBatchId], references: [id], onDelete: Cascade)
+  account           User                   @relation("ErichPaymentAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  attempts          ErichPaymentAttempt[]
+  webhooks          ErichPaymentWebhook[]
+  invoices          ErichInvoice[]
+  refundCases       ErichRefundCase[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([eventId, status])
+  @@index([registrationBatchId])
+}
+
+model ErichPaymentAttempt {
+  id                String             @id @default(cuid())
+  paymentId         String
+  provider          String
+  providerAttemptId String?
+  paymentMethod     String?
+  status            ErichPaymentStatus @default(OPEN)
+  amountCents       Int
+  feeCents          Int                @default(0)
+  currency          String             @default("EUR")
+  checkoutUrl       String?
+  expiresAt         DateTime?
+  providerPayload   Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  payment ErichPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAttemptId])
+  @@index([paymentId, createdAt])
+  @@index([status])
+}
+
+model ErichPaymentWebhook {
+  id               String    @id @default(cuid())
+  paymentId        String?
+  provider         String
+  providerEventId  String
+  eventType        String
+  payload          Json
+  processedAt      DateTime?
+  processingResult String?
+  createdAt        DateTime  @default(now())
+
+  payment ErichPayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([paymentId])
+  @@index([processedAt])
+}
+
+model ErichInvoice {
+  id                  String   @id @default(cuid())
+  registrationBatchId String
+  billingProfileId    String
+  paymentId           String?
+  invoiceNumber       String   @unique
+  issuedAt            DateTime
+  totalNetCents       Int
+  totalTaxCents       Int
+  totalGrossCents     Int
+  currency            String   @default("EUR")
+  pdfFileAssetId      String?
+  immutableSnapshot   Json
+  createdAt           DateTime @default(now())
+
+  registrationBatch ErichRegistrationBatch @relation(fields: [registrationBatchId], references: [id], onDelete: Restrict)
+  billingProfile    ErichBillingProfile    @relation(fields: [billingProfileId], references: [id], onDelete: Restrict)
+  payment           ErichPayment?          @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  lines             ErichInvoiceLine[]
+  creditNotes       ErichCreditNote[]
+
+  @@index([registrationBatchId])
+  @@index([issuedAt])
+}
+
+model ErichInvoiceLine {
+  id                 String   @id @default(cuid())
+  invoiceId          String
+  raceEntryId        String?
+  teamEntryId        String?
+  description        String
+  quantity           Int      @default(1)
+  unitGrossCents     Int
+  totalGrossCents    Int
+  taxRateBasisPoints Int
+  taxCents           Int
+  createdAt          DateTime @default(now())
+
+  invoice   ErichInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  raceEntry ErichRaceEntry? @relation(fields: [raceEntryId], references: [id], onDelete: SetNull)
+  teamEntry ErichTeamEntry? @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([raceEntryId])
+  @@index([teamEntryId])
+}
+
+model ErichCreditNote {
+  id                String   @id @default(cuid())
+  invoiceId         String
+  creditNoteNumber  String   @unique
+  issuedAt          DateTime
+  amountCents       Int
+  currency          String   @default("EUR")
+  reason            String
+  pdfFileAssetId    String?
+  immutableSnapshot Json
+  createdAt         DateTime @default(now())
+
+  invoice ErichInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([issuedAt])
+}
+
+model ErichRefundCase {
+  id                   String   @id @default(cuid())
+  registrationBatchId  String
+  paymentId            String?
+  status               String
+  requestedAmountCents Int
+  approvedAmountCents  Int?
+  reason               String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  registrationBatch ErichRegistrationBatch @relation(fields: [registrationBatchId], references: [id], onDelete: Restrict)
+  payment           ErichPayment?          @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([registrationBatchId])
+  @@index([status])
+}
+
+model ErichLicenseImport {
+  id               String            @id @default(cuid())
+  eventId          String
+  fileAssetId      String?
+  status           ErichImportStatus @default(UPLOADED)
+  sheetName        String?
+  columnMapping    Json?
+  validationReport Json?
+  importedAt       DateTime?
+  createdAt        DateTime          @default(now())
+
+  event     ErichEvent                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  records   ErichLicenseRecord[]
+  decisions ErichEligibilityDecision[]
+
+  @@index([eventId, createdAt])
+  @@index([status])
+}
+
+model ErichLicenseRecord {
+  id              String    @id @default(cuid())
+  licenseImportId String
+  licenseNumber   String?
+  firstName       String?
+  lastName        String?
+  birthDate       DateTime?
+  clubName        String?
+  rawData         Json
+  createdAt       DateTime  @default(now())
+
+  licenseImport ErichLicenseImport @relation(fields: [licenseImportId], references: [id], onDelete: Cascade)
+
+  @@index([licenseImportId])
+  @@index([licenseNumber])
+}
+
+model ErichEligibilityDecision {
+  id              String                 @id @default(cuid())
+  athleteId       String
+  raceEntryId     String?
+  licenseImportId String?
+  status          ErichEligibilityStatus
+  automatic       Boolean                @default(false)
+  decisionData    Json?
+  decidedById     String?
+  decidedAt       DateTime?
+  reason          String?
+  createdAt       DateTime               @default(now())
+
+  athlete       ErichAthlete        @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  raceEntry     ErichRaceEntry?     @relation(fields: [raceEntryId], references: [id], onDelete: Cascade)
+  licenseImport ErichLicenseImport? @relation(fields: [licenseImportId], references: [id], onDelete: SetNull)
+
+  @@index([athleteId, status])
+  @@index([raceEntryId])
+  @@index([licenseImportId])
+}
+
+model ErichTicket {
+  id          String            @id @default(cuid())
+  eventId     String
+  ticketId    String            @unique
+  athleteId   String?
+  trainerId   String?
+  raceEntryId String?
+  teamEntryId String?
+  status      ErichTicketStatus @default(ACTIVE)
+  issuedAt    DateTime          @default(now())
+  revokedAt   DateTime?
+  createdAt   DateTime          @default(now())
+
+  event            ErichEvent               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  athlete          ErichAthlete?            @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  trainer          ErichTrainer?            @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  raceEntry        ErichRaceEntry?          @relation(fields: [raceEntryId], references: [id], onDelete: SetNull)
+  teamEntry        ErichTeamEntry?          @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
+  replacementsFrom ErichTicketReplacement[] @relation("ErichTicketReplacementOld")
+  replacementsTo   ErichTicketReplacement[] @relation("ErichTicketReplacementNew")
+  checkIns         ErichCheckIn[]
+  documentIssues   ErichDocumentIssue[]
+
+  @@index([eventId, status])
+  @@index([athleteId])
+  @@index([trainerId])
+}
+
+model ErichTicketReplacement {
+  id           String   @id @default(cuid())
+  oldTicketId  String
+  newTicketId  String
+  reason       String
+  replacedById String?
+  createdAt    DateTime @default(now())
+
+  oldTicket ErichTicket @relation("ErichTicketReplacementOld", fields: [oldTicketId], references: [id], onDelete: Restrict)
+  newTicket ErichTicket @relation("ErichTicketReplacementNew", fields: [newTicketId], references: [id], onDelete: Restrict)
+
+  @@unique([oldTicketId, newTicketId])
+  @@index([createdAt])
+}
+
+model ErichCheckIn {
+  id         String   @id @default(cuid())
+  ticketId   String
+  source     String
+  status     String
+  warning    String?
+  scannedAt  DateTime @default(now())
+  scannerId  String?
+  deviceId   String?
+  offlineId  String?
+  syncStatus String?
+  details    Json?
+
+  ticket ErichTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, offlineId])
+  @@index([ticketId, scannedAt])
+  @@index([scannerId, scannedAt])
+}
+
+model ErichDocumentIssue {
+  id         String                   @id @default(cuid())
+  ticketId   String
+  status     ErichDocumentIssueStatus @default(NOT_PREPARED)
+  issuedAt   DateTime?
+  issuedById String?
+  source     String?
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+
+  ticket ErichTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, status])
+  @@index([issuedAt])
+}
+
+model ErichScheduleAssignment {
+  id              String    @id @default(cuid())
+  raceEntryId     String?
+  teamEntryId     String?
+  raceNumber      Int
+  runLabel        String?
+  startTime       DateTime?
+  ergometerNumber String?
+  startPlace      String?
+  importJobId     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([raceEntryId])
+  @@index([teamEntryId])
+  @@index([raceNumber])
+  @@index([importJobId])
+}
+
+model ErichConsentDocument {
+  id          String    @id @default(cuid())
+  documentKey String
+  version     String
+  language    String
+  title       String
+  contentHash String
+  activeFrom  DateTime?
+  activeUntil DateTime?
+  createdAt   DateTime  @default(now())
+
+  acceptances ErichConsentAcceptance[]
+
+  @@unique([documentKey, version, language])
+  @@index([documentKey, activeFrom])
+}
+
+model ErichConsentAcceptance {
+  id                String   @id @default(cuid())
+  consentDocumentId String
+  accountId         String
+  athleteId         String?
+  acceptedAt        DateTime @default(now())
+  language          String
+  proofData         Json?
+
+  consentDocument ErichConsentDocument @relation(fields: [consentDocumentId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, acceptedAt])
+  @@index([athleteId])
+}
+
+model ErichEmailMessage {
+  id                  String    @id @default(cuid())
+  accountId           String?
+  registrationBatchId String?
+  templateKey         String
+  language            String
+  recipientEmail      String
+  subject             String
+  status              String
+  providerMessageId   String?
+  errorMessage        String?
+  payload             Json?
+  createdAt           DateTime  @default(now())
+  sentAt              DateTime?
+
+  @@index([accountId, createdAt])
+  @@index([registrationBatchId])
+  @@index([status, createdAt])
+}
+
+model ErichImportJob {
+  id           String            @id @default(cuid())
+  eventId      String
+  importType   String
+  status       ErichImportStatus @default(UPLOADED)
+  fileAssetId  String?
+  createdById  String?
+  dryRunReport Json?
+  appliedAt    DateTime?
+  rolledBackAt DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  event ErichEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, importType, createdAt])
+  @@index([status])
+}
+
+model ErichExportJob {
+  id          String   @id @default(cuid())
+  eventId     String
+  exportType  String
+  filters     Json?
+  version     Int
+  checksum    String?
+  fileAssetId String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  event ErichEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, exportType, version])
+  @@index([eventId, createdAt])
+}
+
+model ErichAuditLog {
+  id         String   @id @default(cuid())
+  eventId    String?
+  actorId    String?
+  entityType String
+  entityId   String?
+  action     String
+  reason     String?
+  oldValue   Json?
+  newValue   Json?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  event ErichEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  actor User?       @relation("ErichAuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([eventId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model ErichFileAsset {
+  id           String   @id @default(cuid())
+  storageKey   String   @unique
+  originalName String?
+  mimeType     String
+  sizeBytes    Int
+  checksum     String?
+  visibility   String   @default("private")
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([mimeType])
+  @@index([createdAt])
+}
+
+model ErichSystemConfiguration {
+  id        String   @id @default(cuid())
+  eventId   String?
+  key       String
+  value     Json
+  version   Int      @default(1)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event ErichEvent? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, key, version])
+  @@index([key, active])
+}
+
+enum Role {
+  VISITOR
+  ORGANIZER
+  ADMIN
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum EventMemberRole {
+  MANAGER
+  EDITOR
+  CHECKIN
+  VIEWER
+}
+
+enum BookingStatus {
+  AWAITING_PAYMENT
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model PromoCode {
+  id              String    @id @default(cuid())
+  eventId         Int
+  code            String
+  description     String?
+  percentOff      Float?
+  amountOff       Float?
+  maxRedemptions  Int?
+  redeemedCount   Int       @default(0)
+  validFrom       DateTime?
+  validUntil      DateTime?
+  active          Boolean   @default(true)
+  ticketTypeIds   String[]  @default([])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@unique([eventId, code])
+  @@index([eventId, active])
+  @@index([validFrom])
+  @@index([validUntil])
+}
+
+model Payment {
+  id                  String              @id @default(cuid())
+  bookingId           String
+  provider            PaymentProvider
+  providerPaymentId   String?
+  providerCheckoutId  String?
+  method              PaymentMethod
+  status              PaymentStatus       @default(PENDING)
+  amountCents         Int
+  currency            String              @default("EUR")
+  idempotencyKey      String              @unique
+  providerPayload     Json?
+  failureCode         String?
+  failureMessage      String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  confirmedAt         DateTime?
+  cancelledAt         DateTime?
+
+  booking       Booking               @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ledgerEntries PaymentLedgerEntry[]
+  webhookEvents PaymentWebhookEvent[]
+
+  @@unique([provider, providerPaymentId])
+  @@unique([provider, providerCheckoutId])
+  @@index([bookingId, status])
+  @@index([provider, status])
+  @@index([createdAt])
+}
+
+model PaymentLedgerEntry {
+  id              String                 @id @default(cuid())
+  paymentId       String
+  bookingId       String
+  type            PaymentLedgerEntryType
+  direction       LedgerDirection
+  amountCents     Int
+  currency        String                 @default("EUR")
+  referenceType   String?
+  referenceId     String?
+  description     String?
+  metadata        Json?
+  createdAt       DateTime               @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+  @@index([bookingId, createdAt])
+  @@index([type])
+  @@index([referenceType, referenceId])
+}
+
+model PaymentWebhookEvent {
+  id               String          @id @default(cuid())
+  paymentId        String?
+  provider         PaymentProvider
+  providerEventId  String
+  eventType        String
+  status           WebhookStatus   @default(RECEIVED)
+  payload          Json
+  processingResult Json?
+  processedAt      DateTime?
+  createdAt        DateTime        @default(now())
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([paymentId])
+  @@index([provider, status, createdAt])
+}
+
+enum TicketStatus {
+  VALID
+  CHECKED_IN
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  PAYPAL
+  STRIPE
+  MOLLIE_PAY_BY_BANK
+  INVOICE
+  BANK_TRANSFER
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+  MOLLIE
+  ADYEN
+  GOCARDLESS
+  MANUAL
+  FREE
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CHARGED_BACK
+}
+
+enum PaymentLedgerEntryType {
+  GROSS_PAYMENT
+  PROVIDER_FEE
+  GATEKEEPER_FEE
+  ORGANIZER_NET
+  REFUND
+  REFUND_FEE
+  CHARGEBACK
+  ADJUSTMENT
+}
+
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum Category {
+  KONZERT
+  PARTY
+  KULTUR
+  SPORT
+  FAMILIE
+  WORKSHOP
+  MARKT
+  SONSTIGES
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  POSTPONED
+  SOLD_OUT
+}
+
+enum EventInteractionType {
+  VIEW
+  CLICK
+  FAVORITE
+  UNFAVORITE
+  BOOKING
+  ALERT
+  SHARE
+  HIDE
+  DWELL
+}
+
+enum RecommendationPreferenceScope {
+  CATEGORY
+  CITY
+  LOCATION
+  PRICE_BAND
+  TIME_SLOT
+  ORGANIZATION
+  VENUE
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ErichEventStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ErichRole {
+  USER
+  ADMIN
+  REGISTRATION_OFFICE
+  SCANNER
+}
+
+enum ErichValuationLevel {
+  ERICH
+  DM
+  MDM
+}
+
+enum ErichRaceGender {
+  MALE
+  FEMALE
+  MIXED
+}
+
+enum ErichRaceStatus {
+  ACTIVE
+  REVIEW_REQUIRED
+  INACTIVE
+}
+
+enum ErichRegistrationStatus {
+  TEMPORARY
+  CHECKOUT
+  PAID
+  INVALID
+  CANCELLED
+  COMPLETED
+}
+
+enum ErichPaymentStatus {
+  OPEN
+  CHECKOUT_ACTIVE
+  PENDING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  EXPIRED
+  CHARGED_BACK
+  PARTIALLY_REFUNDED
+  FULLY_REFUNDED
+}
+
+enum ErichEligibilityStatus {
+  NOT_REQUIRED
+  UNCHECKED
+  PENDING_IMPORT
+  AUTO_CONFIRMED
+  MANUAL_REVIEW
+  MANUAL_CONFIRMED
+  REJECTED
+}
+
+enum ErichRaceEntryStatus {
+  ACTIVE
+  CANCELLED
+  REBOOKED
+  NOT_ELIGIBLE
+  FINISHED
+}
+
+enum ErichTeamEntryStatus {
+  TEMPORARY
+  ACTIVE
+  CANCELLED
+  REBOOKED
+  NOT_ELIGIBLE
+  FINISHED
+}
+
+enum ErichTicketStatus {
+  ACTIVE
+  REPLACED
+  REVOKED
+}
+
+enum ErichDocumentIssueStatus {
+  NOT_PREPARED
+  PREPARED
+  ISSUED
+}
+
+enum ErichImportStatus {
+  UPLOADED
+  MAPPED
+  DRY_RUN_OK
+  DRY_RUN_FAILED
+  APPLIED
+  ROLLED_BACK
+}
