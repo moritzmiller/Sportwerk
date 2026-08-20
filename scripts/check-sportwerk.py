@@ -6,11 +6,25 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PRESS_DIR = ROOT / "Pressespiegel"
 STATIC_DIR = ROOT / "static"
 COMPILED_DIR = STATIC_DIR / "compiled"
 ROUTES = ["/", "/pressespiegel", "/trello", "/teilnahmebedingungen", "/aufgabenverwaltung"]
 JSX_ENTRIES = ["dashboard", "trello", "teilnahmebedingungen", "aufgabenverwaltung"]
+
+
+def load_env_file(path: Path = ROOT / ".env") -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def ok(message: str) -> None:
@@ -59,7 +73,8 @@ def check_required_paths() -> bool:
     required_paths = [
         ROOT / "templates",
         STATIC_DIR,
-        PRESS_DIR / "web_app.py",
+        ROOT / "app.py",
+        ROOT / "requirements.txt",
         STATIC_DIR / "vendor" / "react.production.min.js",
         STATIC_DIR / "vendor" / "react-dom.production.min.js",
     ]
@@ -109,9 +124,9 @@ def check_auth_env() -> None:
 
 
 def check_flask_routes() -> bool:
-    sys.path.insert(0, str(PRESS_DIR))
+    sys.path.insert(0, str(ROOT))
     try:
-        from web_app import app
+        from app import app
     except Exception as exc:
         fail(f"Flask app import failed: {exc}")
         return False
@@ -130,6 +145,7 @@ def check_flask_routes() -> bool:
 
 
 def main() -> int:
+    load_env_file()
     print("Sportwerk readiness check")
     checks = [
         check_required_paths(),

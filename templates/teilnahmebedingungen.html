@@ -1,19 +1,13 @@
-<!doctype html>
-<html lang="de">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sportwerk Teilnahmebedingungen</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  </head>
-  <body>
-    <nav class="session-bar" aria-label="Angemeldeter Nutzer">
-      <span>{{ session.user.name }}</span>
-      <a href="{{ url_for('logout') }}">Abmelden</a>
-    </nav>
-    <div id="participation-root"></div>
-    <script src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='compiled/teilnahmebedingungen.js') }}"></script>
-  </body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Sportwerk Teilnahmebedingungen{% endblock %}
+
+{% block content %}
+  <div id="participation-root"></div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='compiled/teilnahmebedingungen.js') }}"></script>
+{% endblock %}

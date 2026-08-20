@@ -12,9 +12,9 @@ API_KEY = os.getenv("TRELLO_API_KEY")
 TOKEN = os.getenv("TRELLO_TOKEN")
 
 # --- DLL FIX FÜR WINDOWS / WEASYPRINT ---
-msys_path = r"C:\Program Files\msys2\ucrt64\bin"
-if os.path.exists(msys_path):
-    os.add_dll_directory(msys_path)
+weasyprint_dll_dir = os.getenv("WEASYPRINT_DLL_DIR")
+if weasyprint_dll_dir and os.path.exists(weasyprint_dll_dir):
+    os.add_dll_directory(weasyprint_dll_dir)
 
 # HIER DEINE QUELL-BOARDS EINTRAGEN:
 QUELL_BOARD_IDS = [

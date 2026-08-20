@@ -58,7 +58,6 @@ app = Flask(
     static_url_path="/assets",
 )
 app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024
-app.config["SECRET_KEY"] = secrets.token_hex(32)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
@@ -118,7 +117,12 @@ def get_env_value(name: str, default: str = "") -> str:
 
 
 def get_secret_key() -> str:
-    return get_env_value("SPORTWERK_SECRET_KEY") or secrets.token_hex(32)
+    secret_key = get_env_value("SPORTWERK_SECRET_KEY")
+    if secret_key:
+        return secret_key
+    if os.environ.get("FLASK_ENV") == "production":
+        app.logger.warning("SPORTWERK_SECRET_KEY is not set; sessions will reset on restart.")
+    return secrets.token_hex(32)
 
 
 app.config["SECRET_KEY"] = get_secret_key()
@@ -185,6 +189,42 @@ def require_google_login():
     if wants_json_response():
         return jsonify({"error": "Bitte melde dich mit Google an."}), 401
     return redirect(url_for("login", next=request.full_path if request.query_string else request.path))
+
+
+@app.errorhandler(404)
+def not_found(_error):
+    if wants_json_response():
+        return jsonify({"error": "Nicht gefunden."}), 404
+    return render_template("error.html", title="Nicht gefunden", message="Diese Seite existiert nicht."), 404
+
+
+@app.errorhandler(413)
+def file_too_large(_error):
+    if wants_json_response():
+        return jsonify({"error": "Die hochgeladene Datei ist zu gross."}), 413
+    return (
+        render_template(
+            "error.html",
+            title="Datei zu gross",
+            message="Die hochgeladene Datei ueberschreitet die erlaubte Groesse.",
+        ),
+        413,
+    )
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    app.logger.exception("Unhandled Sportwerk server error")
+    if wants_json_response():
+        return jsonify({"error": "Interner Serverfehler. Bitte versuche es spaeter erneut."}), 500
+    return (
+        render_template(
+            "error.html",
+            title="Serverfehler",
+            message="Die Anfrage konnte gerade nicht verarbeitet werden.",
+        ),
+        500,
+    )
 
 
 @app.get("/login")
@@ -817,4 +857,8 @@ def download_pdf(job_id: str):
 
 if __name__ == "__main__":
     ensure_instance_dirs()
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    app.run(
+        host=os.environ.get("HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "5000")),
+        debug=os.environ.get("FLASK_DEBUG") == "1",
+    )

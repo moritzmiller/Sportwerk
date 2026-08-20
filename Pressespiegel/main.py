@@ -170,7 +170,12 @@ PDF_LAYOUTS: tuple[PdfLayout, ...] = (
     ),
 )
 PDF_LAYOUT_BY_ID = {layout.layout_id: layout for layout in PDF_LAYOUTS}
-CUSTOM_LAYOUTS_PATH = Path.home() / ".pressespiegel_layouts.json"
+CUSTOM_LAYOUTS_PATH = Path(
+    os.environ.get(
+        "SPORTWERK_LAYOUT_CONFIG_PATH",
+        Path(__file__).resolve().parent / "instance" / "pressespiegel_layouts.json",
+    )
+).expanduser()
 MIN_BACKGROUND_WIDTH = 1240
 MIN_BACKGROUND_HEIGHT = 1754
 BACKGROUND_ASPECT_RATIO_RANGE = (0.62, 0.80)
@@ -1982,6 +1987,7 @@ def load_custom_layout_config() -> tuple[dict[str, PdfFontFamily], list[PdfLayou
 
 
 def save_custom_layout_config(custom_fonts: dict[str, PdfFontFamily], custom_layouts: list[PdfLayout]) -> None:
+    CUSTOM_LAYOUTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     CUSTOM_LAYOUTS_PATH.write_text(
         json.dumps(
             {

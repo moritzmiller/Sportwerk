@@ -46,9 +46,9 @@ TRELLO_API_KEY = get_env_value("TRELLO_API_KEY")
 TRELLO_TOKEN = get_env_value("TRELLO_TOKEN")
 OPENAI_API_KEY = get_env_value("OPENAI_API_KEY")
 # --- DLL FIX FUER WINDOWS / WEASYPRINT ---
-msys_path = r"C:\Program Files\msys2\ucrt64\bin"
-if os.path.exists(msys_path):
-    os.add_dll_directory(msys_path)
+weasyprint_dll_dir = get_env_value("WEASYPRINT_DLL_DIR")
+if weasyprint_dll_dir and os.path.exists(weasyprint_dll_dir):
+    os.add_dll_directory(weasyprint_dll_dir)
 
 # Boards, deren offene Aufgaben durch die KI ausgewertet werden.
 QUELL_BOARD_IDS = [

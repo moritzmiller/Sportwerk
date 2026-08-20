@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Sportwerk{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block session_bar %}{% endblock %}
+
+{% block content %}
+  <main class="auth-shell">
+    <header class="auth-brand" aria-label="Sportwerk">
+      <span class="auth-brand__mark" aria-hidden="true">S</span>
+      <span>Sportwerk</span>
+    </header>
+    <section class="auth-card" aria-labelledby="error-title">
+      <div>
+        <p class="eyebrow">Sportwerk</p>
+        <h1 id="error-title">{{ title }}</h1>
+        <p class="auth-card__text">{{ message }}</p>
+      </div>
+      <a class="google-login-button" href="{{ url_for('dashboard') }}">Zum Dashboard</a>
+    </section>
+  </main>
+{% endblock %}

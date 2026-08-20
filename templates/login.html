@@ -1,35 +1,32 @@
-<!doctype html>
-<html lang="de">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sportwerk Anmeldung</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  </head>
-  <body class="auth-page">
-    <main class="auth-shell">
-      <header class="auth-brand" aria-label="Sportwerk">
-        <span class="auth-brand__mark" aria-hidden="true">S</span>
-        <span>Sportwerk</span>
-      </header>
-      <section class="auth-card" aria-labelledby="login-title">
-        <div>
-          <p class="eyebrow">Sportwerk</p>
-          <h1 id="login-title">Anmelden</h1>
-          <p class="auth-card__text">Der Zugriff auf das Dashboard ist nur mit einem Google-Konto moeglich.</p>
-        </div>
+{% extends "base.html" %}
 
-        {% if request.args.get("error") %}
-          <p class="auth-message auth-message--danger">
-            Anmeldung aktuell nicht moeglich. Bitte versuche es spaeter erneut.
-          </p>
-        {% endif %}
+{% block title %}Sportwerk Anmeldung{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block session_bar %}{% endblock %}
 
-        <a class="google-login-button" href="{{ url_for('start_google_login', next=next_url) }}">
-          <span aria-hidden="true">G</span>
-          Mit Google anmelden
-        </a>
-      </section>
-    </main>
-  </body>
-</html>
+{% block content %}
+  <main class="auth-shell">
+    <header class="auth-brand" aria-label="Sportwerk">
+      <span class="auth-brand__mark" aria-hidden="true">S</span>
+      <span>Sportwerk</span>
+    </header>
+    <section class="auth-card" aria-labelledby="login-title">
+      <div>
+        <p class="eyebrow">Sportwerk</p>
+        <h1 id="login-title">Anmelden</h1>
+        <p class="auth-card__text">Der Zugriff auf das Dashboard ist nur mit einem Google-Konto moeglich.</p>
+      </div>
+
+      {% if request.args.get("error") %}
+        <p class="auth-message auth-message--danger">
+          Anmeldung aktuell nicht moeglich. Bitte versuche es spaeter erneut.
+        </p>
+      {% endif %}
+
+      <a class="google-login-button" href="{{ url_for('start_google_login', next=next_url) }}">
+        <span aria-hidden="true">G</span>
+        Mit Google anmelden
+      </a>
+    </section>
+  </main>
+{% endblock %}

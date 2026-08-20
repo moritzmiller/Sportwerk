@@ -1,16 +1,8 @@
-<!doctype html>
-<html lang="de">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Pressespiegel Generator</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  </head>
-  <body>
-    <nav class="session-bar" aria-label="Angemeldeter Nutzer">
-      <span>{{ session.user.name }}</span>
-      <a href="{{ url_for('logout') }}">Abmelden</a>
-    </nav>
+{% extends "base.html" %}
+
+{% block title %}Pressespiegel Generator{% endblock %}
+
+{% block content %}
     <main class="app-shell">
       <header class="topbar">
         <div>
@@ -205,8 +197,9 @@
         </label>
       </article>
     </template>
+{% endblock %}
 
+{% block scripts %}
     <script id="layout-data" type="application/json">{{ layouts_json | tojson }}</script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
-  </body>
-</html>
+{% endblock %}
