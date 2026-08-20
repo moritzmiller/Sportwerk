@@ -36,6 +36,14 @@ GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=
 ```
 
+`SPORTWERK_SECRET_KEY` muss auf dem Server ein fester, langer Zufallswert sein und bei jedem Worker gleich geladen werden. Fehlt dieser Wert im Gunicorn-/Produktionsbetrieb, startet Sportwerk absichtlich nicht, weil Google-OAuth sonst mit `error=state` zufaellig fehlschlaegt.
+
+Einen neuen Wert erzeugst du mit:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(64))"
+```
+
 Optional:
 
 ```bash
@@ -74,10 +82,29 @@ python scripts/run-sportwerk.py --port 8000
 Auf einem Linux-Server kann die App als WSGI-Anwendung gestartet werden:
 
 ```bash
-gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} app:app
+gunicorn -w 2 -b 127.0.0.1:${PORT:-5000} app:app
 ```
 
 Apache sollte dabei als Reverse Proxy vor Gunicorn laufen. Gunicorn bedient die Python-App lokal, Apache uebernimmt Domain, TLS und Weiterleitung.
+
+Wichtig: Starte Gunicorn ueber `app:app` aus dem Sportwerk-Root, nicht direkt ueber `Pressespiegel.web_app:app`. `web_app.py` laedt die `.env` zwar ebenfalls als Schutz, aber `app:app` ist der vorgesehene Einstiegspunkt.
+
+Beispiel fuer einen systemd-Service:
+
+```ini
+[Unit]
+Description=Sportwerk Flask application
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/sportwerk
+EnvironmentFile=/var/www/sportwerk/.env
+ExecStart=/var/www/sportwerk/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
 
 Beispiel fuer einen Apache VirtualHost:
 
@@ -86,6 +113,9 @@ Beispiel fuer einen Apache VirtualHost:
     ServerName example.com
 
     ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "443"
+
     ProxyPass / http://127.0.0.1:5000/
     ProxyPassReverse / http://127.0.0.1:5000/
 

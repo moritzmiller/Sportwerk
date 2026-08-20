@@ -18,6 +18,7 @@ import requests
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from main import (
@@ -51,15 +52,37 @@ OUTPUT_DIR = INSTANCE_DIR / "outputs"
 PARTICIPATION_OUTPUT_DIR = INSTANCE_DIR / "teilnahmebedingungen"
 ALLOWED_UPLOAD_KINDS = {"background", "cover", "logo", "font"}
 
+
+def load_env_file(path: Path = SPORTWERK_DIR / ".env") -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and value and not os.environ.get(key):
+            os.environ[key] = value
+
+
+load_env_file()
+
 app = Flask(
     __name__,
     template_folder=str(TEMPLATE_DIR),
     static_folder=str(STATIC_DIR),
     static_url_path="/assets",
 )
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PREFERRED_URL_SCHEME"] = (
+    "https" if os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "").startswith("https://") else "http"
+)
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
@@ -120,8 +143,12 @@ def get_secret_key() -> str:
     secret_key = get_env_value("SPORTWERK_SECRET_KEY")
     if secret_key:
         return secret_key
-    if os.environ.get("FLASK_ENV") == "production":
-        app.logger.warning("SPORTWERK_SECRET_KEY is not set; sessions will reset on restart.")
+    if os.environ.get("FLASK_ENV") == "production" or "gunicorn" in Path(sys.argv[0]).name:
+        raise RuntimeError(
+            "SPORTWERK_SECRET_KEY is required for server/Gunicorn operation. "
+            "Set it in the service environment or Sportwerk/.env so OAuth sessions stay stable."
+        )
+    app.logger.warning("SPORTWERK_SECRET_KEY is not set; using a temporary local development key.")
     return secrets.token_hex(32)
 
 
