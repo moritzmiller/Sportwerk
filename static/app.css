@@ -1266,6 +1266,15 @@ textarea {
   white-space: nowrap;
 }
 
+.file-picker--directory {
+  background: #fff8ed;
+  border-color: rgba(242, 140, 40, 0.36);
+}
+
+.file-picker--directory span {
+  border-color: rgba(242, 140, 40, 0.42);
+}
+
 input:focus,
 select:focus,
 textarea:focus {

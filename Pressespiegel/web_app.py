@@ -453,6 +453,38 @@ def parse_fallback_urls() -> tuple[list[str], list[str]]:
     return prepare_urls(request.form.get("fallback_urls", "").splitlines())
 
 
+def save_source_logo_uploads(job_id: str) -> tuple[Path | None, list[str]]:
+    uploads = request.files.getlist("source_logos")
+    if not uploads:
+        return None, []
+
+    target_dir = UPLOAD_DIR / "source-logos" / job_id
+    saved: list[str] = []
+    invalid: list[str] = []
+
+    for upload in uploads:
+        if upload is None or not upload.filename:
+            continue
+        safe_name = secure_filename(Path(upload.filename).name)
+        if not safe_name:
+            continue
+        if Path(safe_name).suffix.lower() != ".png":
+            invalid.append(f"{upload.filename}: nur PNG-Dateien werden als Quellenlogo akzeptiert")
+            continue
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / safe_name
+        counter = 2
+        while target_path.exists():
+            target_path = target_dir / f"{Path(safe_name).stem}_{counter}{Path(safe_name).suffix}"
+            counter += 1
+        upload.save(target_path)
+        saved.append(safe_name)
+
+    if not saved:
+        return None, invalid
+    return target_dir, invalid
+
+
 def build_layout_from_form(layouts: list[PdfLayout]) -> tuple[PdfLayout, dict[str, Any]]:
     base_layout = find_layout(layouts, request.form.get("layout_id"))
     background_upload = save_upload("background_image", "background")
@@ -548,6 +580,10 @@ def build_layout_from_form(layouts: list[PdfLayout]) -> tuple[PdfLayout, dict[st
 
 def update_job(job_id: str, **changes: Any) -> None:
     with JOBS_LOCK:
+        if "progress" in changes:
+            current_progress = float(JOBS[job_id].get("progress") or 0)
+            next_progress = max(0, min(100, round(float(changes["progress"]), 1)))
+            changes["progress"] = max(current_progress, next_progress)
         JOBS[job_id].update(changes)
         save_job_state("pressespiegel", job_id, JOBS[job_id])
 
@@ -590,12 +626,19 @@ def article_to_dict(article) -> dict[str, Any]:
         "article_date": article.article_date,
         "section_heading": article.section_heading,
         "capture_note": article.capture_note,
+        "logo_warning": article.logo_warning,
         "error": article.error,
         "successful": article.successful,
     }
 
 
-def run_job(job_id: str, urls: list[str], sections: list[SectionPlanEntry], layout: PdfLayout) -> None:
+def run_job(
+    job_id: str,
+    urls: list[str],
+    sections: list[SectionPlanEntry],
+    layout: PdfLayout,
+    source_logo_dir: Path | None,
+) -> None:
     output_path = OUTPUT_DIR / f"pressespiegel_{job_id}.pdf"
     cancel_event = threading.Event()
 
@@ -616,6 +659,7 @@ def run_job(job_id: str, urls: list[str], sections: list[SectionPlanEntry], layo
                 sections,
                 output_path,
                 layout,
+                source_logo_dir,
                 status_callback,
                 progress_callback,
                 log_callback,
@@ -695,6 +739,7 @@ def create_job():
         return jsonify({"error": str(exc)}), 400
 
     job_id = uuid.uuid4().hex
+    source_logo_dir, source_logo_errors = save_source_logo_uploads(job_id)
     with JOBS_LOCK:
         JOBS[job_id] = {
             "id": job_id,
@@ -704,14 +749,15 @@ def create_job():
             "logs": [],
             "download_url": None,
             "summary": None,
-            "input_errors": section_errors + fallback_errors,
+            "input_errors": section_errors + fallback_errors + source_logo_errors,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "layout": layout.name,
+            "source_logo_dir": str(source_logo_dir) if source_logo_dir else None,
             **extra,
         }
         save_job_state("pressespiegel", job_id, JOBS[job_id])
 
-    thread = threading.Thread(target=run_job, args=(job_id, urls, sections, layout), daemon=True)
+    thread = threading.Thread(target=run_job, args=(job_id, urls, sections, layout, source_logo_dir), daemon=True)
     thread.start()
     return jsonify({"job_id": job_id, "status_url": url_for("job_status", job_id=job_id)})
 

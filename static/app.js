@@ -10,6 +10,7 @@ const logOutput = document.querySelector("#log-output");
 const downloadLink = document.querySelector("#download-link");
 const summarySections = document.querySelector("#summary-sections");
 const summaryUrls = document.querySelector("#summary-urls");
+let displayedProgress = 0;
 
 function addSection(heading = "", urls = "") {
   const fragment = template.content.cloneNode(true);
@@ -75,7 +76,8 @@ function setBusy(isBusy) {
 function setStatus(message, progress = null) {
   statusText.textContent = message;
   if (progress !== null) {
-    progressBar.style.width = `${progress}%`;
+    displayedProgress = Math.max(displayedProgress, Number(progress) || 0);
+    progressBar.style.width = `${displayedProgress}%`;
   }
 }
 
@@ -120,6 +122,15 @@ function showError(error) {
 document.querySelectorAll(".file-picker input[type='file']").forEach((input) => {
   input.addEventListener("change", () => {
     const label = input.closest(".file-picker").querySelector("strong");
+    if (input.name === "source_logos") {
+      const files = [...(input.files || [])].filter((file) => file.name.toLowerCase().endsWith(".png"));
+      const firstPath = files[0]?.webkitRelativePath || "";
+      const folderName = firstPath.split("/")[0] || "";
+      label.textContent = files.length
+        ? `${folderName || "Logo-Ordner"} (${files.length} PNG)`
+        : "Kein Ordner ausgewählt";
+      return;
+    }
     label.textContent = input.files?.[0]?.name || "Keine Datei ausgewählt";
   });
 });
@@ -129,6 +140,7 @@ layoutSelect.addEventListener("change", () => applyLayout(layoutSelect.value));
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  displayedProgress = 0;
   downloadLink.classList.add("hidden");
   logOutput.textContent = "";
   const formData = new FormData(form);

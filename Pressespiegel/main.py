@@ -51,6 +51,18 @@ PDF_SECTION_TITLE_BLOCK_HEIGHT = 54
 PDF_SECTION_TITLE_FONT_SIZE = 18
 PDF_SECTION_TITLE_LINE_HEIGHT = 22
 PDF_SECTION_TITLE_MAX_LINES = 2
+SOURCE_LOGO_SUFFIXES = {".png"}
+LOGO_STOP_WORDS = {
+    "logo",
+    "logos",
+    "media",
+    "source",
+    "quelle",
+    "presse",
+    "news",
+    "nachrichten",
+    "www",
+}
 
 StatusCallback = Callable[[str], None]
 ProgressCallback = Callable[[float], None]
@@ -76,6 +88,7 @@ class ArticleResult:
     logo_path: Path | None = None
     section_heading: str | None = None
     capture_note: str | None = None
+    logo_warning: str | None = None
     error: str | None = None
 
     @property
@@ -219,13 +232,24 @@ def normalize_url(raw_url: str) -> str | None:
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
 
 
+def split_url_input(raw_lines: list[str]) -> list[str]:
+    """Teilt Semikolon- oder zeilengetrennte Eingaben in einzelne URL-Kandidaten."""
+    candidates: list[str] = []
+    for raw_line in raw_lines:
+        for candidate in re.split(r"[;\n\r]+", raw_line):
+            value = candidate.strip().strip(",")
+            if value:
+                candidates.append(value)
+    return candidates
+
+
 def prepare_urls(raw_lines: list[str]) -> tuple[list[str], list[str]]:
     """Validiert URLs, entfernt Duplikate und liefert ungültige Zeilen separat zurück."""
     valid: list[str] = []
     invalid: list[str] = []
     seen: set[str] = set()
 
-    for raw_line in raw_lines:
+    for raw_line in split_url_input(raw_lines):
         normalized = normalize_url(raw_line)
         if normalized is None:
             if raw_line.strip():
@@ -246,7 +270,7 @@ def prepare_section_groups(raw_groups: list[tuple[str, list[str]]]) -> tuple[lis
 
     for group_index, (raw_heading, raw_url_lines) in enumerate(raw_groups, start=1):
         heading = re.sub(r"\s+", " ", raw_heading).strip()
-        url_lines = [line for line in raw_url_lines if line.strip()]
+        url_lines = split_url_input(raw_url_lines)
         if not heading and not url_lines:
             continue
 
@@ -968,6 +992,62 @@ def render_paywall_fallback(
     return is_usable_article_screenshot(image_path)
 
 
+def render_link_error_fallback(
+    image_path: Path,
+    site_name: str,
+    url: str,
+    error_message: str,
+) -> bool:
+    """Rendert eine Fehler-Hinweisseite, damit blockierte Links im PDF erhalten bleiben."""
+    width = 1440
+    height = 1200
+    margin_x = 128
+    max_text_width = width - 2 * margin_x
+    fonts = {
+        "source": _load_article_font(30, bold=True),
+        "badge": _load_article_font(26, bold=True),
+        "headline": _load_article_font(58, bold=True),
+        "paragraph": _load_article_font(31, bold=False),
+        "meta": _load_article_font(24, bold=False),
+    }
+    image = Image.new("RGB", (width, height), "#FFFFFF")
+    draw = ImageDraw.Draw(image)
+    y = 96
+
+    def draw_wrapped(kind: str, text: str, line_height: int, fill: str) -> None:
+        nonlocal y
+        for line in _wrap_draw_text(draw, text, fonts[kind], max_text_width):
+            draw.text((margin_x, y), line, font=fonts[kind], fill=fill)
+            y += line_height
+
+    draw.rectangle((0, 0, 18, height), fill="#F28C28")
+    draw.rectangle((margin_x, y, width - margin_x, y + 114), fill="#FFF4E6", outline="#F28C28", width=3)
+    draw.text((margin_x + 32, y + 34), "LINK KONNTE NICHT GELADEN WERDEN", font=fonts["badge"], fill="#9A4F00")
+    y += 180
+    draw_wrapped("source", site_name, 40, "#171717")
+    y += 28
+    draw_wrapped("headline", "Quelle bleibt im Pressespiegel erhalten", 68, "#171717")
+    y += 36
+    draw_wrapped(
+        "paragraph",
+        f"Der Artikel konnte automatisiert nicht abgerufen werden: {error_message}. "
+        "Der Link wurde nicht verworfen und kann manuell geprueft oder spaeter erneut verarbeitet werden.",
+        43,
+        "#30343B",
+    )
+    y += 48
+    draw.line((margin_x, y, width - margin_x, y), fill="#D9DDE3", width=2)
+    y += 44
+    draw_wrapped("meta", url, 34, "#6B7280")
+
+    try:
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(image_path, format="PNG", optimize=True)
+    except OSError:
+        return False
+    return is_usable_article_screenshot(image_path)
+
+
 # =====================================================================
 # PLAYWRIGHT: ARTIKEL LADEN UND SCREENSHOT ERSTELLEN
 # =====================================================================
@@ -1586,7 +1666,7 @@ async def capture_article(
     context,
     url: str,
     image_path: Path,
-    logo_path: Path,
+    source_logo_index: dict[str, Path],
     cancel_event: threading.Event,
 ) -> ArticleResult:
     if cancel_event.is_set():
@@ -1596,7 +1676,26 @@ async def capture_article(
     try:
         response = await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
         if response and response.status >= 400:
-            raise RuntimeError(f"HTTP-Fehler {response.status}")
+            site_name = urlparse(url).netloc.removeprefix("www.") or "Unbekannte Quelle"
+            source_logo = find_source_logo(source_logo_index, url, site_name)
+            error_message = f"HTTP-Fehler {response.status}"
+            logo_warning = None
+            if source_logo is None:
+                logo_warning = (
+                    f"Logo fehlt fuer {site_name}. "
+                    "Bitte fuege eine passende PNG-Datei in den Logo-Ordner ein."
+                )
+            if render_link_error_fallback(image_path, site_name, url, error_message):
+                return ArticleResult(
+                    url=url,
+                    title=site_name,
+                    site_name=site_name,
+                    image_path=image_path,
+                    logo_path=source_logo,
+                    capture_note=f"{error_message}: Hinweis-Seite wurde eingefuegt.",
+                    logo_warning=logo_warning,
+                )
+            raise RuntimeError(error_message)
 
         # Manche Nachrichtenseiten laden nach DOMContentLoaded noch eine neue
         # Dokumentversion oder leiten clientseitig weiter. Erst danach darf
@@ -1617,7 +1716,13 @@ async def capture_article(
         title, site_name, article_date = extract_article_metadata(html_content, page.url or url)
         article_text_blocks = extract_article_text_blocks(html_content, title)
         is_paywalled = has_paywall_marker(html_content, visible_text)
-        captured_logo = await capture_site_logo(page, logo_path, site_name)
+        source_logo = find_source_logo(source_logo_index, page.url or url, site_name)
+        logo_warning = None
+        if source_logo is None:
+            logo_warning = (
+                f"Logo fehlt fuer {site_name} ({urlparse(page.url or url).netloc.removeprefix('www.')}). "
+                "Bitte lege eine passende PNG-Datei im Logo-Ordner ab."
+            )
         hero_image_path = download_article_hero_image(
             html_content,
             page.url or url,
@@ -1640,7 +1745,7 @@ async def capture_article(
                     site_name=site_name,
                     article_date=article_date,
                     image_path=image_path,
-                    logo_path=captured_logo,
+                    logo_path=source_logo,
                     capture_note="Paywall erkannt: frei strukturierter Artikeltext wurde als Text-Fallback eingefügt.",
                 )
 
@@ -1653,7 +1758,7 @@ async def capture_article(
                     site_name=site_name,
                     article_date=article_date,
                     image_path=image_path,
-                    logo_path=captured_logo,
+                    logo_path=source_logo,
                     capture_note="Paywall erkannt: Im PDF wurde eine Hinweisseite mit frei sichtbaren Metadaten eingefügt.",
                 )
 
@@ -1724,7 +1829,7 @@ async def capture_article(
                     site_name=site_name,
                     article_date=article_date,
                     image_path=image_path,
-                    logo_path=captured_logo,
+                    logo_path=source_logo,
                     capture_note=(
                         "Paywall erkannt: frei strukturierter Artikeltext wurde als Text-Fallback eingefügt."
                         if is_paywalled
@@ -1741,7 +1846,7 @@ async def capture_article(
                         site_name=site_name,
                         article_date=article_date,
                         image_path=image_path,
-                        logo_path=captured_logo,
+                        logo_path=source_logo,
                         capture_note="Paywall erkannt: Im PDF wurde eine Hinweisseite mit frei sichtbaren Metadaten eingefügt.",
                     )
 
@@ -1767,7 +1872,7 @@ async def capture_article(
                     site_name=site_name,
                     article_date=article_date,
                     image_path=image_path,
-                    logo_path=captured_logo,
+                    logo_path=source_logo,
                     capture_note="Strukturierte Artikeldaten mit Titelbild wurden für die PDF-Darstellung verwendet.",
                 )
 
@@ -1777,7 +1882,7 @@ async def capture_article(
             site_name=site_name,
             article_date=article_date,
             image_path=image_path,
-            logo_path=captured_logo,
+            logo_path=source_logo,
         )
     finally:
         if not page.is_closed():
@@ -2224,6 +2329,68 @@ def article_domain(article: ArticleResult) -> str:
     return domain or article.site_name
 
 
+def normalize_logo_key(value: str) -> str:
+    normalized = value.lower()
+    replacements = {
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "ß": "ss",
+    }
+    for source, target in replacements.items():
+        normalized = normalized.replace(source, target)
+    normalized = normalized.removeprefix("www.")
+    normalized = re.sub(r"\.(de|com|net|org|info|eu|io)$", "", normalized)
+    tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized)
+        if token and token not in LOGO_STOP_WORDS
+    ]
+    return "".join(tokens)
+
+
+def logo_match_keys(url: str, site_name: str) -> set[str]:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    host_parts = [part for part in host.split(".") if part and part not in {"de", "com", "net", "org", "eu"}]
+    candidates = {host, ".".join(host_parts), "".join(host_parts), site_name}
+    candidates.update(host_parts)
+    return {key for candidate in candidates if (key := normalize_logo_key(candidate))}
+
+
+def build_source_logo_index(source_logo_dir: Path | None) -> dict[str, Path]:
+    if source_logo_dir is None or not source_logo_dir.exists() or not source_logo_dir.is_dir():
+        return {}
+
+    index: dict[str, Path] = {}
+    for logo_path in sorted(source_logo_dir.rglob("*")):
+        if logo_path.suffix.lower() not in SOURCE_LOGO_SUFFIXES or not logo_path.is_file():
+            continue
+        try:
+            with Image.open(logo_path) as image:
+                image.verify()
+        except (OSError, ValueError):
+            continue
+
+        stem_key = normalize_logo_key(logo_path.stem)
+        if stem_key:
+            index.setdefault(stem_key, logo_path)
+
+        for token in re.findall(r"[a-zA-Z0-9]+", logo_path.stem):
+            token_key = normalize_logo_key(token)
+            if token_key:
+                index.setdefault(token_key, logo_path)
+    return index
+
+
+def find_source_logo(source_logo_index: dict[str, Path], url: str, site_name: str) -> Path | None:
+    for key in logo_match_keys(url, site_name):
+        logo_path = source_logo_index.get(key)
+        if logo_path is not None:
+            return logo_path
+    return None
+
+
 def draw_cover_page(
     pdf: canvas.Canvas,
     articles: list[ArticleResult],
@@ -2607,7 +2774,6 @@ def build_pdf(
     column_footer_space = 32
     column_image_height = column_image_top - content_bottom - column_footer_space
     card_padding = 8
-    column_items: list[tuple[ArticleResult, Image.Image, int, int, str | None]] = []
 
     for article_index, article in enumerate(articles, start=1):
         if cancel_event.is_set():
@@ -2623,51 +2789,40 @@ def build_pdf(
             )
             image_parts = split_image_for_pdf(image, pixels_per_pdf_page)
 
-            for part_index, part in enumerate(image_parts, start=1):
+        part_index = 0
+        while part_index < len(image_parts):
+            if cancel_event.is_set():
+                raise UserCancelled
+
+            apply_pdf_background(pdf, layout)
+            page_content_top = content_top
+            if part_index == 0 and article.section_heading:
+                _draw_section_heading(pdf, article.section_heading, content_top, layout)
+                page_content_top = content_top - PDF_SECTION_TITLE_BLOCK_HEIGHT
+
+            page_parts = image_parts[part_index:part_index + 2]
+            for column_index, part in enumerate(page_parts):
                 if cancel_event.is_set():
                     raise UserCancelled
-                section_heading = article.section_heading if part_index == 1 else None
-                column_items.append((article, part, part_index, len(image_parts), section_heading))
+                column_x = outer_margin + column_index * (column_width + column_gap)
+                _draw_image_column(
+                    pdf,
+                    article,
+                    part,
+                    column_x,
+                    column_width,
+                    page_content_top,
+                    content_bottom,
+                    part_index + column_index + 1,
+                    len(image_parts),
+                    card_padding,
+                    layout,
+                )
+
+            pdf.showPage()
+            part_index += 2
 
         progress_callback(82 + (article_index / len(articles)) * 18)
-
-    item_index = 0
-    while item_index < len(column_items):
-        if cancel_event.is_set():
-            raise UserCancelled
-
-        apply_pdf_background(pdf, layout)
-
-        first_item = column_items[item_index]
-        page_section_heading = first_item[4]
-        page_content_top = content_top
-        if page_section_heading:
-            _draw_section_heading(pdf, page_section_heading, content_top, layout)
-            page_content_top = content_top - PDF_SECTION_TITLE_BLOCK_HEIGHT
-
-        page_items = [first_item]
-        item_index += 1
-        while item_index < len(column_items) and len(page_items) < 2 and column_items[item_index][4] is None:
-            page_items.append(column_items[item_index])
-            item_index += 1
-
-        for column_index, (article, part, part_index, part_total, _section_heading) in enumerate(page_items):
-            column_x = outer_margin + column_index * (column_width + column_gap)
-            _draw_image_column(
-                pdf,
-                article,
-                part,
-                column_x,
-                column_width,
-                page_content_top,
-                content_bottom,
-                part_index,
-                part_total,
-                card_padding,
-                layout,
-            )
-
-        pdf.showPage()
 
     pdf.save()
 
@@ -2682,6 +2837,7 @@ async def core_build_pressespiegel(
     sections: list[SectionPlanEntry],
     output_pdf_path: Path,
     layout: PdfLayout,
+    source_logo_dir: Path | None,
     status_callback: StatusCallback,
     progress_callback: ProgressCallback,
     log_callback: LogCallback,
@@ -2691,6 +2847,7 @@ async def core_build_pressespiegel(
     article_jobs = flatten_section_urls(sections) if sections else [(url, None) for url in urls]
     pending_section_heading: str | None = None
     total_urls = len(article_jobs)
+    source_logo_index = build_source_logo_index(source_logo_dir)
 
     try:
         with tempfile.TemporaryDirectory(prefix="pressespiegel_") as temp_dir_name:
@@ -2718,19 +2875,26 @@ async def core_build_pressespiegel(
                             pending_section_heading = section_heading
 
                         image_path = temp_dir / f"article_{index:03d}.png"
-                        logo_path = temp_dir / f"logo_{index:03d}.png"
                         try:
                             article = await capture_article(
                                 context,
                                 url,
                                 image_path,
-                                logo_path,
+                                source_logo_index,
                                 cancel_event,
                             )
+                            if article.logo_path is None:
+                                article.logo_warning = (
+                                    f"Logo fehlt fuer {article.site_name} "
+                                    f"({urlparse(article.url).netloc.removeprefix('www.')}). "
+                                    "Bitte fuege eine passende PNG-Datei in den Logo-Ordner ein."
+                                )
                             if pending_section_heading:
                                 article.section_heading = pending_section_heading
                                 pending_section_heading = None
                             results.append(article)
+                            if article.logo_warning:
+                                log_callback(f"Logo fehlt: {article.logo_warning}")
                             if article.capture_note:
                                 log_callback(f"Hinweis: {article.capture_note}")
                             log_callback(f"Erfolgreich: {article.site_name} – {article.title}")
@@ -3835,6 +3999,7 @@ class PressespiegelGUI:
                     sections,
                     output_path,
                     pdf_layout,
+                    None,
                     self.set_status,
                     self.set_progress,
                     self.append_log,

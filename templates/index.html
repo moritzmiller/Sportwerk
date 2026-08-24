@@ -143,6 +143,16 @@
               <input name="main_logo_path" id="main-logo-path" type="hidden">
             </div>
 
+            <div class="field field--full">
+              <span>Quellenlogos</span>
+              <label class="file-picker file-picker--directory">
+                <input name="source_logos" type="file" accept=".png" multiple webkitdirectory directory>
+                <span>Ordner auswÃ¤hlen</span>
+                <strong>Kein Ordner ausgewÃ¤hlt</strong>
+              </label>
+              <small>PNG-Dateien passend zur Quelle benennen, zum Beispiel saechsische.png, tag24.png oder lvz.png. Fehlende Logos werden gemeldet, der PDF-Export lÃ¤uft weiter.</small>
+            </div>
+
             <label class="field field--full">
               <span>Als neues Layout speichern</span>
               <input name="save_layout_name" type="text" placeholder="Optionaler Layoutname">
