@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import os
 import secrets
 import subprocess
@@ -50,6 +51,7 @@ INSTANCE_DIR = BASE_DIR / "instance"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
 OUTPUT_DIR = INSTANCE_DIR / "outputs"
 PARTICIPATION_OUTPUT_DIR = INSTANCE_DIR / "teilnahmebedingungen"
+JOB_STATE_DIR = INSTANCE_DIR / "job-state"
 ALLOWED_UPLOAD_KINDS = {"background", "cover", "logo", "font"}
 
 
@@ -137,6 +139,30 @@ def get_env_value(name: str, default: str = "") -> str:
             pass
 
     return default.strip()
+
+
+def job_state_path(kind: str, job_id: str) -> Path:
+    safe_job_id = secure_filename(job_id)
+    return JOB_STATE_DIR / kind / f"{safe_job_id}.json"
+
+
+def save_job_state(kind: str, job_id: str, job: dict[str, Any]) -> None:
+    target_path = job_state_path(kind, job_id)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = target_path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(target_path)
+
+
+def load_job_state(kind: str, job_id: str) -> dict[str, Any] | None:
+    target_path = job_state_path(kind, job_id)
+    if not target_path.exists():
+        return None
+    try:
+        data = json.loads(target_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def get_secret_key() -> str:
@@ -360,6 +386,7 @@ def ensure_instance_dirs() -> None:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     PARTICIPATION_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    JOB_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_participation_module():
@@ -522,31 +549,37 @@ def build_layout_from_form(layouts: list[PdfLayout]) -> tuple[PdfLayout, dict[st
 def update_job(job_id: str, **changes: Any) -> None:
     with JOBS_LOCK:
         JOBS[job_id].update(changes)
+        save_job_state("pressespiegel", job_id, JOBS[job_id])
 
 
 def append_job_log(job_id: str, message: str) -> None:
     with JOBS_LOCK:
         JOBS[job_id]["logs"].append(message)
+        save_job_state("pressespiegel", job_id, JOBS[job_id])
 
 
 def update_trello_job(job_id: str, **changes: Any) -> None:
     with TRELLO_JOBS_LOCK:
         TRELLO_JOBS[job_id].update(changes)
+        save_job_state("trello", job_id, TRELLO_JOBS[job_id])
 
 
 def append_trello_job_log(job_id: str, message: str) -> None:
     with TRELLO_JOBS_LOCK:
         TRELLO_JOBS[job_id]["logs"].append(message)
+        save_job_state("trello", job_id, TRELLO_JOBS[job_id])
 
 
 def update_participation_job(job_id: str, **changes: Any) -> None:
     with PARTICIPATION_JOBS_LOCK:
         PARTICIPATION_JOBS[job_id].update(changes)
+        save_job_state("teilnahmebedingungen", job_id, PARTICIPATION_JOBS[job_id])
 
 
 def append_participation_job_log(job_id: str, message: str) -> None:
     with PARTICIPATION_JOBS_LOCK:
         PARTICIPATION_JOBS[job_id]["logs"].append(message)
+        save_job_state("teilnahmebedingungen", job_id, PARTICIPATION_JOBS[job_id])
 
 
 def article_to_dict(article) -> dict[str, Any]:
@@ -676,6 +709,7 @@ def create_job():
             "layout": layout.name,
             **extra,
         }
+        save_job_state("pressespiegel", job_id, JOBS[job_id])
 
     thread = threading.Thread(target=run_job, args=(job_id, urls, sections, layout), daemon=True)
     thread.start()
@@ -746,6 +780,7 @@ def create_trello_job():
             "logs": [],
             "created_at": datetime.now().isoformat(timespec="seconds"),
         }
+        save_job_state("trello", job_id, TRELLO_JOBS[job_id])
 
     thread = threading.Thread(target=run_trello_job, args=(job_id, action), daemon=True)
     thread.start()
@@ -757,7 +792,10 @@ def trello_job_status(job_id: str):
     with TRELLO_JOBS_LOCK:
         job = TRELLO_JOBS.get(job_id)
         if job is None:
-            return jsonify({"error": "Job nicht gefunden."}), 404
+            job = load_job_state("trello", job_id)
+            if job is None:
+                return jsonify({"error": "Job nicht gefunden."}), 404
+            TRELLO_JOBS[job_id] = job
         return jsonify(job)
 
 
@@ -835,6 +873,7 @@ def create_participation_job():
             "summary": None,
             "created_at": datetime.now().isoformat(timespec="seconds"),
         }
+        save_job_state("teilnahmebedingungen", job_id, PARTICIPATION_JOBS[job_id])
 
     thread_payload = {
         "club_name": club_name,
@@ -853,7 +892,10 @@ def participation_job_status(job_id: str):
     with PARTICIPATION_JOBS_LOCK:
         job = PARTICIPATION_JOBS.get(job_id)
         if job is None:
-            return jsonify({"error": "Job nicht gefunden."}), 404
+            job = load_job_state("teilnahmebedingungen", job_id)
+            if job is None:
+                return jsonify({"error": "Job nicht gefunden."}), 404
+            PARTICIPATION_JOBS[job_id] = job
         return jsonify(job)
 
 
@@ -870,7 +912,10 @@ def job_status(job_id: str):
     with JOBS_LOCK:
         job = JOBS.get(job_id)
         if job is None:
-            return jsonify({"error": "Job nicht gefunden."}), 404
+            job = load_job_state("pressespiegel", job_id)
+            if job is None:
+                return jsonify({"error": "Job nicht gefunden."}), 404
+            JOBS[job_id] = job
         return jsonify(job)
 
 
