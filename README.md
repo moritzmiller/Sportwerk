@@ -46,6 +46,8 @@ https://deine-sportwerk-domain.example/auth/google/callback
 
 Wenn hier versehentlich `http://127.0.0.1:8000/auth/google/callback`, `localhost` oder ein anderer Port steht, blockiert Google die Anmeldung mit `Fehler 400: redirect_uri_mismatch`.
 
+Sportwerk faengt eine lokale/Loopback-Redirect-URI bei oeffentlichen Requests ab und leitet Google dann mit der aus Host und `X-Forwarded-Proto` abgeleiteten URL weiter. Das ist nur ein Schutznetz: Der Reverse Proxy muss dafuer `Host` und `X-Forwarded-Proto` korrekt weitergeben, und die abgeleitete URL muss in Google Cloud hinterlegt sein.
+
 Einen neuen Wert erzeugst du mit:
 
 ```bash

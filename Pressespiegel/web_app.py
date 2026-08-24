@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -181,14 +181,44 @@ def get_secret_key() -> str:
 app.config["SECRET_KEY"] = get_secret_key()
 
 
+def is_loopback_host(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    normalized = hostname.strip().lower()
+    return normalized in {"localhost", "127.0.0.1", "::1"} or normalized.startswith("127.")
+
+
+def derive_google_redirect_uri() -> str:
+    return url_for("google_callback", _external=True)
+
+
+def get_google_redirect_uri() -> str:
+    configured_redirect_uri = get_env_value("GOOGLE_OAUTH_REDIRECT_URI")
+    if not configured_redirect_uri:
+        return derive_google_redirect_uri()
+
+    configured_host = urlparse(configured_redirect_uri).hostname
+    request_host = urlparse(f"//{request.host}").hostname or request.host.split(":", 1)[0]
+    request_is_public = not is_loopback_host(request_host)
+    if is_loopback_host(configured_host) and request_is_public:
+        derived_redirect_uri = derive_google_redirect_uri()
+        app.logger.warning(
+            "Ignoring loopback GOOGLE_OAUTH_REDIRECT_URI=%s for public request host=%s. "
+            "Using derived redirect URI=%s.",
+            configured_redirect_uri,
+            request.host,
+            derived_redirect_uri,
+        )
+        return derived_redirect_uri
+
+    return configured_redirect_uri
+
+
 def get_google_oauth_config() -> dict[str, str]:
     return {
         "client_id": get_env_value("GOOGLE_OAUTH_CLIENT_ID"),
         "client_secret": get_env_value("GOOGLE_OAUTH_CLIENT_SECRET"),
-        "redirect_uri": (
-            get_env_value("GOOGLE_OAUTH_REDIRECT_URI")
-            or url_for("google_callback", _external=True)
-        ),
+        "redirect_uri": get_google_redirect_uri(),
     }
 
 

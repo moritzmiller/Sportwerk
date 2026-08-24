@@ -131,6 +131,11 @@ def check_auth_env() -> None:
                 "This only works if the app is opened on the same localhost URL "
                 "and Google Cloud has this exact URI in Authorized redirect URIs."
             )
+            warn(
+                "Sportwerk ignores this loopback URI for public request hosts and derives "
+                "the callback from the incoming host/proto headers. Make sure the reverse "
+                "proxy forwards Host and X-Forwarded-Proto correctly."
+            )
     else:
         warn(
             "GOOGLE_OAUTH_REDIRECT_URI is not set; Flask will derive it from the request. "
