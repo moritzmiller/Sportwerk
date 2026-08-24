@@ -38,6 +38,14 @@ GOOGLE_OAUTH_REDIRECT_URI=
 
 `SPORTWERK_SECRET_KEY` muss auf dem Server ein fester, langer Zufallswert sein und bei jedem Worker gleich geladen werden. Fehlt dieser Wert im Gunicorn-/Produktionsbetrieb, startet Sportwerk absichtlich nicht, weil Google-OAuth sonst mit `error=state` zufaellig fehlschlaegt.
 
+`GOOGLE_OAUTH_REDIRECT_URI` muss exakt zu einer Authorized redirect URI im Google-Cloud-OAuth-Client passen. Fuer eine produktive Domain ist das normalerweise:
+
+```text
+https://deine-sportwerk-domain.example/auth/google/callback
+```
+
+Wenn hier versehentlich `http://127.0.0.1:8000/auth/google/callback`, `localhost` oder ein anderer Port steht, blockiert Google die Anmeldung mit `Fehler 400: redirect_uri_mismatch`.
+
 Einen neuen Wert erzeugst du mit:
 
 ```bash

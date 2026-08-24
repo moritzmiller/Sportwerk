@@ -122,6 +122,21 @@ def check_auth_env() -> None:
     else:
         ok("Google OAuth client variables are set")
 
+    redirect_uri = get_env_value("GOOGLE_OAUTH_REDIRECT_URI")
+    if redirect_uri:
+        ok(f"Google OAuth redirect URI: {redirect_uri}")
+        if "127.0.0.1" in redirect_uri or "localhost" in redirect_uri:
+            warn(
+                "Google OAuth redirect URI points to localhost. "
+                "This only works if the app is opened on the same localhost URL "
+                "and Google Cloud has this exact URI in Authorized redirect URIs."
+            )
+    else:
+        warn(
+            "GOOGLE_OAUTH_REDIRECT_URI is not set; Flask will derive it from the request. "
+            "Behind a proxy this must preserve the public host and HTTPS scheme."
+        )
+
 
 def check_flask_routes() -> bool:
     sys.path.insert(0, str(ROOT))
