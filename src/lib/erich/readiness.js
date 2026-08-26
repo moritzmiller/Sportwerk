@@ -1,4 +1,5 @@
 import { buildRaceReviewSummary, erichRaceReviewInclude } from "./master-data-review.js";
+import { buildErichEventLookup } from "./unified-migration.js";
 
 const BLOCKING_LEVELS = Object.freeze({
     ERROR: "ERROR",
@@ -20,6 +21,9 @@ function countBy(items, key) {
 
 export function buildErichReadinessReport({
     event,
+    unifiedEvent = null,
+    unifiedBookings = [],
+    unifiedTicketCount = 0,
     races = [],
     pricePhases = [],
     clubs = [],
@@ -36,6 +40,14 @@ export function buildErichReadinessReport({
     } else if (event.status !== "ACTIVE") {
         addIssue(issues, BLOCKING_LEVELS.ERROR, "event", "ERICH event is not active.", {
             status: event.status,
+        });
+    }
+
+    if (event && !unifiedEvent) {
+        addIssue(issues, BLOCKING_LEVELS.INFO, "event", "No unified GateKeeper ERICH event mapping exists yet.");
+    } else if (unifiedEvent?.status !== "PUBLISHED") {
+        addIssue(issues, BLOCKING_LEVELS.WARNING, "event", "Unified GateKeeper ERICH event is not published.", {
+            status: unifiedEvent.status,
         });
     }
 
@@ -123,6 +135,11 @@ export function buildErichReadinessReport({
         addIssue(issues, BLOCKING_LEVELS.INFO, "exports", "No prepared ERICH operational export exists yet.");
     }
 
+    const unifiedBookingQuantity = unifiedBookings.reduce(
+        (sum, booking) => sum + Number(booking.quantity || 0),
+        0
+    );
+
     return {
         ready: issues.every((issue) => issue.level !== BLOCKING_LEVELS.ERROR),
         issues,
@@ -135,6 +152,13 @@ export function buildErichReadinessReport({
             clubs: clubs.length,
             activeClubCount,
             registrationBatchesByStatus: countBy(registrationBatches, "status"),
+            unifiedEventId: unifiedEvent?.id ?? null,
+            unifiedEventStatus: unifiedEvent?.status ?? null,
+            unifiedTicketTypes: unifiedEvent?._count?.ticketTypes ?? 0,
+            unifiedBookings: unifiedBookings.length,
+            unifiedBookingQuantity,
+            unifiedBookingsByStatus: countBy(unifiedBookings, "status"),
+            unifiedTickets: unifiedTicketCount,
             licenseImportsByStatus: countBy(licenses, "status"),
             invoices: invoices.length,
             tickets: tickets.length,
@@ -156,6 +180,25 @@ export async function loadErichReadinessReport(store, { eventId = null } = {}) {
         return buildErichReadinessReport({ event: null });
     }
 
+    const unifiedEvent = store.event
+        ? await store.event.findFirst({
+              where: buildErichEventLookup(event.id),
+              select: {
+                  id: true,
+                  title: true,
+                  status: true,
+                  eventOptions: true,
+                  _count: {
+                      select: {
+                          bookings: true,
+                          tickets: true,
+                          ticketTypes: true,
+                      },
+                  },
+              },
+          })
+        : null;
+
     const [
         races,
         pricePhases,
@@ -165,6 +208,8 @@ export async function loadErichReadinessReport(store, { eventId = null } = {}) {
         invoices,
         tickets,
         exportJobs,
+        unifiedBookings,
+        unifiedTicketCount,
     ] = await Promise.all([
         store.erichRaceDefinition.findMany({
             where: { eventId: event.id },
@@ -188,10 +233,26 @@ export async function loadErichReadinessReport(store, { eventId = null } = {}) {
         store.erichInvoice.findMany({ where: { registrationBatch: { eventId: event.id } } }),
         store.erichTicket.findMany({ where: { eventId: event.id } }),
         store.erichExportJob.findMany({ where: { eventId: event.id } }),
+        store.booking && unifiedEvent
+            ? store.booking.findMany({
+                  where: { eventId: unifiedEvent.id },
+                  select: {
+                      id: true,
+                      status: true,
+                      quantity: true,
+                  },
+              })
+            : Promise.resolve([]),
+        store.ticket && unifiedEvent
+            ? store.ticket.count({ where: { eventId: unifiedEvent.id } })
+            : Promise.resolve(0),
     ]);
 
     return buildErichReadinessReport({
         event,
+        unifiedEvent,
+        unifiedBookings,
+        unifiedTicketCount,
         races,
         pricePhases,
         clubs,

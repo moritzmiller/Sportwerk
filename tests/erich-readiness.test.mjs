@@ -49,6 +49,12 @@ test("ERICH readiness report blocks missing production master data", () => {
 test("ERICH readiness report allows complete active master data but warns on open operations", () => {
     const report = buildErichReadinessReport({
         event: { id: "event-1", status: "ACTIVE" },
+        unifiedEvent: { id: 42, status: "PUBLISHED", _count: { ticketTypes: 1 } },
+        unifiedBookings: [
+            { id: "booking-1", status: "PAID", quantity: 2 },
+            { id: "booking-2", status: "AWAITING_PAYMENT", quantity: 1 },
+        ],
+        unifiedTicketCount: 2,
         races: [completeRace(), completeRace({ id: "race-2", raceNumber: 132, status: "REVIEW_REQUIRED" })],
         pricePhases: [
             { id: "phase-1", active: true },
@@ -76,6 +82,9 @@ test("ERICH readiness report allows complete active master data but warns on ope
     assert.equal(report.issues.some((issue) => issue.area === "tickets" && issue.level === "WARNING"), true);
     assert.equal(report.issues.some((issue) => issue.area === "licenses" && issue.level === "WARNING"), true);
     assert.equal(report.metrics.registrationBatchesByStatus.PAID, 1);
+    assert.equal(report.metrics.unifiedBookingsByStatus.PAID, 1);
+    assert.equal(report.metrics.unifiedBookingQuantity, 3);
+    assert.equal(report.metrics.unifiedTickets, 2);
 });
 
 test("ERICH readiness report catches active races with missing prices", () => {
@@ -107,6 +116,24 @@ test("ERICH readiness loader collects event-scoped data", async () => {
             findMany: async (args) => {
                 calls.push(["erichRaceDefinition.findMany", args]);
                 return [completeRace()];
+            },
+        },
+        event: {
+            findFirst: async (args) => {
+                calls.push(["event.findFirst", args]);
+                return { id: 42, status: "PUBLISHED", _count: { bookings: 1, tickets: 2, ticketTypes: 1 } };
+            },
+        },
+        booking: {
+            findMany: async (args) => {
+                calls.push(["booking.findMany", args]);
+                return [{ id: "booking-1", status: "PAID", quantity: 2 }];
+            },
+        },
+        ticket: {
+            count: async (args) => {
+                calls.push(["ticket.count", args]);
+                return 2;
             },
         },
         erichPricePhase: {
@@ -157,5 +184,9 @@ test("ERICH readiness loader collects event-scoped data", async () => {
 
     assert.equal(report.ready, true);
     assert.equal(calls[0][0], "erichEvent.findUnique");
-    assert.deepEqual(calls[1][1].where, { eventId: "event-1" });
+    assert.deepEqual(calls[1][1].where.eventOptions.path, ["legacySource", "erichEventId"]);
+    assert.deepEqual(calls[2][1].where, { eventId: "event-1" });
+    assert.deepEqual(calls.find(([name]) => name === "booking.findMany")[1].where, { eventId: 42 });
+    assert.deepEqual(calls.find(([name]) => name === "ticket.count")[1].where, { eventId: 42 });
+    assert.equal(report.metrics.unifiedBookingQuantity, 2);
 });
