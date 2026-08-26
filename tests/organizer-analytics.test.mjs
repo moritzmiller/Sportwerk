@@ -8,6 +8,7 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
         {
             id: 1,
             title: "Club Night",
+            ownerId: "organizer-1",
             status: "PUBLISHED",
             startDate: new Date(Date.now() + 86_400_000),
             city: "Dresden",
@@ -26,6 +27,7 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
         {
             id: 2,
             title: "Workshop",
+            ownerId: "organizer-2",
             status: "DRAFT",
             startDate: new Date(Date.now() - 86_400_000),
             city: "Dresden",
@@ -47,6 +49,8 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
             status: "PAID",
             quantity: 2,
             totalAmount: 24,
+            serviceFee: 2,
+            createdAt: new Date("2026-01-05T12:00:00.000Z"),
             checkedInAt: new Date(),
         },
         {
@@ -54,6 +58,8 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
             status: "PAID",
             quantity: 1,
             totalAmount: 12,
+            serviceFee: 1,
+            createdAt: new Date("2026-03-10T12:00:00.000Z"),
             checkedInAt: null,
         },
         {
@@ -61,6 +67,8 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
             status: "AWAITING_PAYMENT",
             quantity: 1,
             totalAmount: 12,
+            serviceFee: 1,
+            createdAt: new Date("2026-03-11T12:00:00.000Z"),
             checkedInAt: null,
         },
         {
@@ -68,6 +76,8 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
             status: "REFUNDED",
             quantity: 1,
             totalAmount: 8,
+            serviceFee: 0,
+            createdAt: new Date("2026-03-12T12:00:00.000Z"),
             checkedInAt: null,
         },
     ];
@@ -77,9 +87,15 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
     assert.equal(analytics.totals.events, 2);
     assert.equal(analytics.totals.publishedEvents, 1);
     assert.equal(analytics.totals.revenue, 36);
+    assert.equal(analytics.totals.serviceFees, 3);
+    assert.equal(analytics.totals.netTicketRevenue, 33);
     assert.equal(analytics.totals.refundedAmount, 8);
     assert.equal(analytics.totals.netRevenue, 28);
     assert.equal(analytics.totals.ticketsSold, 3);
+    assert.equal(analytics.totals.averageTicketPrice, 11);
+    assert.equal(analytics.totals.averageGrossTicketValue, 12);
+    assert.equal(analytics.totals.organizerCount, 2);
+    assert.equal(analytics.totals.averageTicketsPerOrganizer, 1.5);
     assert.equal(analytics.totals.checkedInTickets, 2);
     assert.equal(analytics.totals.pendingBookings, 1);
     assert.equal(analytics.totals.conversionRate, 8);
@@ -89,6 +105,30 @@ test("buildOrganizerAnalytics summarizes organizer revenue and engagement", () =
     assert.equal(analytics.topEvents[0].title, "Club Night");
     assert.equal(analytics.topEvents[0].fillRate, 30);
     assert.equal(analytics.topEvents[0].conversionRate, 10);
+    assert.equal(analytics.topEvents[0].averageTicketPrice, 11);
+    assert.deepEqual(analytics.revenueComposition, {
+        ticketRevenue: 33,
+        serviceFees: 3,
+        refundedAmount: 8,
+    });
+    assert.deepEqual(analytics.paymentFunnel, {
+        paid: 2,
+        pending: 1,
+        refunded: 1,
+    });
+    assert.equal(analytics.chartScales.eventTicketMax, 3);
+    assert.equal(analytics.chartScales.monthlyTicketMax, 2);
+    assert.deepEqual(
+        analytics.monthlyTicketSales.map((month) => ({
+            key: month.key,
+            ticketsSold: month.ticketsSold,
+        })),
+        [
+            { key: "2026-01", ticketsSold: 2 },
+            { key: "2026-02", ticketsSold: 0 },
+            { key: "2026-03", ticketsSold: 1 },
+        ]
+    );
 });
 
 test("buildOrganizerAnalytics flags published events that need attention", () => {

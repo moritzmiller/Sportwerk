@@ -23,6 +23,27 @@ function Percent({ value }) {
     return <>{Number(value || 0)}%</>;
 }
 
+function formatNumber(value, options = {}) {
+    return new Intl.NumberFormat("de-DE", {
+        maximumFractionDigits: 1,
+        ...options,
+    }).format(Number(value) || 0);
+}
+
+function getBarStyle(value, max) {
+    const normalizedMax = Number(max) || 0;
+    const normalizedValue = Number(value) || 0;
+    const width = normalizedMax > 0 ? (normalizedValue / normalizedMax) * 100 : 0;
+    return { "--bar-width": `${Math.max(normalizedValue > 0 ? 6 : 0, Math.round(width))}%` };
+}
+
+function getColumnStyle(value, max) {
+    const normalizedMax = Number(max) || 0;
+    const normalizedValue = Number(value) || 0;
+    const height = normalizedMax > 0 ? (normalizedValue / normalizedMax) * 100 : 0;
+    return { "--column-height": `${Math.max(normalizedValue > 0 ? 8 : 0, Math.round(height))}%` };
+}
+
 export default async function OrganizerAnalyticsPage() {
     const user = await getCurrentUser();
 
@@ -35,6 +56,7 @@ export default async function OrganizerAnalyticsPage() {
             orderBy: { startDate: "asc" },
             select: {
                 id: true,
+                ownerId: true,
                 title: true,
                 status: true,
                 startDate: true,
@@ -70,17 +92,28 @@ export default async function OrganizerAnalyticsPage() {
                 status: true,
                 quantity: true,
                 totalAmount: true,
+                serviceFee: true,
+                createdAt: true,
                 checkedInAt: true,
             },
         }),
     ]);
 
     const analytics = buildOrganizerAnalytics({ events, bookings });
-    const { totals, topEvents, attentionNeeded, eventPerformance } = analytics;
+    const {
+        totals,
+        topEvents,
+        attentionNeeded,
+        eventPerformance,
+        revenueComposition,
+        paymentFunnel,
+        monthlyTicketSales,
+        chartScales,
+    } = analytics;
 
     return (
-        <main className="section">
-            <div className="container stack-lg">
+        <main className="section analytics-page">
+            <div className="container analytics-container stack-lg">
                 <div className="checkout-page__header">
                     <div>
                         <span className="eyebrow">Analytics</span>
@@ -91,7 +124,7 @@ export default async function OrganizerAnalyticsPage() {
                     </div>
                     <div className="flex wrap">
                         <Link href="/dashboard" className="btn btn-ghost">
-                            Zurueck zum Dashboard
+                            Zurück zum Dashboard
                         </Link>
                         <Link href="/dashboard/bookings" className="btn btn-primary">
                             Buchungen
@@ -99,102 +132,181 @@ export default async function OrganizerAnalyticsPage() {
                     </div>
                 </div>
 
-                <div className="stats">
-                    <div className="stat">
-                        <div className="stat__value">{formatMoney(totals.netRevenue)}</div>
-                        <div className="stat__label">Netto-Umsatz</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{formatMoney(totals.revenue)}</div>
-                        <div className="stat__label">Bezahlter Umsatz</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{formatMoney(totals.refundedAmount)}</div>
-                        <div className="stat__label">Erstattet</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{totals.ticketsSold}</div>
-                        <div className="stat__label">Tickets verkauft</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">
-                            <Percent value={totals.conversionRate} />
+                <section className="analytics-finance" aria-labelledby="analytics-finance-title">
+                    <div className="analytics-finance__header">
+                        <div>
+                            <span className="eyebrow">Finanzdashboard</span>
+                            <h2 id="analytics-finance-title">Ticketumsatz und Veranstalterleistung</h2>
                         </div>
-                        <div className="stat__label">View zu Kauf</div>
+                        <span className="analytics-finance__badge">{totals.paidBookings} bezahlte Bestellungen</span>
                     </div>
-                    <div className="stat">
-                        <div className="stat__value">
-                            <Percent value={totals.checkInRate} />
-                        </div>
-                        <div className="stat__label">Check-in-Quote</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{totals.views}</div>
-                        <div className="stat__label">Views</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{totals.favorites}</div>
-                        <div className="stat__label">Favoriten</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{totals.pendingBookings}</div>
-                        <div className="stat__label">Offene Buchungen</div>
-                    </div>
-                    <div className="stat">
-                        <div className="stat__value">{totals.publishedEvents}</div>
-                        <div className="stat__label">Live-Events</div>
-                    </div>
-                </div>
 
-                <div className="dash__grid dash__grid--split">
-                    <section className="card stack-lg">
-                        <div className="section-title-row">
-                            <h2>Top Events</h2>
-                            <span className="text-muted">{topEvents.length} sichtbar</span>
+                    <div className="analytics-finance__hero">
+                        <article className="analytics-finance__hero-card">
+                            <span>Durchschnittlicher Ticketpreis</span>
+                            <strong>{formatMoney(totals.averageTicketPrice)}</strong>
+                            <small>{formatMoney(totals.averageGrossTicketValue)} inkl. GateKeeper-Gebühr</small>
+                        </article>
+                        <article className="analytics-finance__hero-card analytics-finance__hero-card--accent">
+                            <span>Tickets pro Veranstalter</span>
+                            <strong>{formatNumber(totals.averageTicketsPerOrganizer)}</strong>
+                            <small>{formatNumber(totals.ticketsSold)} Tickets bei {formatNumber(totals.organizerCount)} Veranstaltern</small>
+                        </article>
+                        <article className="analytics-finance__mini-card">
+                            <span>Bruttoumsatz</span>
+                            <strong>{formatMoney(totals.revenue)}</strong>
+                            <small>{formatMoney(totals.serviceFees)} Gebühren</small>
+                        </article>
+                        <article className="analytics-finance__mini-card">
+                            <span>Netto nach Erstattung</span>
+                            <strong>{formatMoney(totals.netRevenue)}</strong>
+                            <small>{formatMoney(totals.refundedAmount)} erstattet</small>
+                        </article>
+                    </div>
+
+                    <div className="analytics-finance__charts">
+                        <article className="analytics-chart analytics-chart--wide">
+                            <div className="analytics-chart__header">
+                                <div>
+                                    <span>Verkaufte Tickets pro Monat</span>
+                                    <strong>{formatNumber(totals.ticketsSold)} Tickets im Verlauf</strong>
+                                </div>
+                                <small>Monatliche PAID-Bookings nach Verkaufsdatum</small>
+                            </div>
+                            {monthlyTicketSales.length === 0 ? (
+                                <p className="text-muted">Noch keine bezahlten Ticketverkäufe im Verlauf vorhanden.</p>
+                            ) : (
+                                <div className="analytics-month-chart">
+                                    {monthlyTicketSales.map((month) => (
+                                        <div key={month.key} className="analytics-month-chart__item">
+                                            <strong>{formatNumber(month.ticketsSold, { maximumFractionDigits: 0 })}</strong>
+                                            <div className="analytics-month-chart__column">
+                                                <i style={getColumnStyle(month.ticketsSold, chartScales.monthlyTicketMax)} />
+                                            </div>
+                                            <span>{month.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </article>
+
+                        <article className="analytics-chart">
+                            <div className="analytics-chart__header">
+                                <div>
+                                    <span>Umsatzstruktur</span>
+                                    <strong>{formatMoney(totals.revenue)}</strong>
+                                </div>
+                                <small>Ticketwert, Gebühren, Erstattungen</small>
+                            </div>
+                            <div className="analytics-bar-list">
+                                <div className="analytics-bar-row">
+                                    <span>Ticketwert</span>
+                                    <div className="analytics-bar-track">
+                                        <i style={getBarStyle(revenueComposition.ticketRevenue, chartScales.revenueMax)} />
+                                    </div>
+                                    <strong>{formatMoney(revenueComposition.ticketRevenue)}</strong>
+                                </div>
+                                <div className="analytics-bar-row">
+                                    <span>Gebühren</span>
+                                    <div className="analytics-bar-track analytics-bar-track--fee">
+                                        <i style={getBarStyle(revenueComposition.serviceFees, chartScales.revenueMax)} />
+                                    </div>
+                                    <strong>{formatMoney(revenueComposition.serviceFees)}</strong>
+                                </div>
+                                <div className="analytics-bar-row">
+                                    <span>Erstattet</span>
+                                    <div className="analytics-bar-track analytics-bar-track--refund">
+                                        <i style={getBarStyle(revenueComposition.refundedAmount, chartScales.revenueMax)} />
+                                    </div>
+                                    <strong>{formatMoney(revenueComposition.refundedAmount)}</strong>
+                                </div>
+                            </div>
+                        </article>
+
+                        <article className="analytics-chart">
+                            <div className="analytics-chart__header">
+                                <div>
+                                    <span>Zahlungsfunnel</span>
+                                    <strong><Percent value={totals.conversionRate} /></strong>
+                                </div>
+                                <small>Bezahlte Buchungen vs. offene Buchungen</small>
+                            </div>
+                            <div className="analytics-funnel">
+                                <div className="analytics-funnel__row">
+                                    <span>Bezahlt</span>
+                                    <i style={getBarStyle(paymentFunnel.paid, chartScales.funnelMax)} />
+                                    <strong>{paymentFunnel.paid}</strong>
+                                </div>
+                                <div className="analytics-funnel__row analytics-funnel__row--pending">
+                                    <span>Offen</span>
+                                    <i style={getBarStyle(paymentFunnel.pending, chartScales.funnelMax)} />
+                                    <strong>{paymentFunnel.pending}</strong>
+                                </div>
+                                <div className="analytics-funnel__row analytics-funnel__row--refund">
+                                    <span>Erstattet</span>
+                                    <i style={getBarStyle(paymentFunnel.refunded, chartScales.funnelMax)} />
+                                    <strong>{paymentFunnel.refunded}</strong>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+
+                    <article className="analytics-chart">
+                        <div className="analytics-chart__header">
+                            <div>
+                                <span>Top-Events nach Ticketmenge</span>
+                                <strong>{formatNumber(totals.ticketsSold)} Tickets verkauft</strong>
+                            </div>
+                            <small><Percent value={totals.checkInRate} /> Check-in-Quote</small>
                         </div>
                         {topEvents.length === 0 ? (
-                            <p className="text-muted">Noch keine Events fuer Analytics vorhanden.</p>
+                            <p className="text-muted">Noch keine Ticketverkäufe vorhanden.</p>
                         ) : (
-                            <div className="stack">
+                            <div className="analytics-event-bars">
                                 {topEvents.map((event) => (
-                                    <article key={event.id} className="analysis-card">
-                                        <strong>{event.title}</strong>
-                                        <p>
-                                            {formatMoney(event.revenue)} Umsatz &middot;{" "}
-                                            {event.ticketsSold} Tickets &middot;{" "}
-                                            <Percent value={event.conversionRate} /> Conversion
-                                        </p>
-                                    </article>
+                                    <div key={event.id} className="analytics-event-row">
+                                        <div className="analytics-event-row__label">
+                                            <strong>{event.title}</strong>
+                                            <span>{formatMoney(event.averageTicketPrice)} Ø Ticketpreis</span>
+                                        </div>
+                                        <div className="analytics-event-row__bar">
+                                            <i style={getBarStyle(event.ticketsSold, chartScales.eventTicketMax)} />
+                                        </div>
+                                        <div className="analytics-event-row__value">
+                                            <strong>{event.ticketsSold} Tickets</strong>
+                                            <span>{formatMoney(event.revenue)}</span>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         )}
-                    </section>
+                    </article>
+                </section>
 
-                    <section className="card stack-lg">
-                        <div className="section-title-row">
-                            <h2>Aufmerksamkeit</h2>
-                            <span className="text-muted">{attentionNeeded.length} Hinweise</span>
+                <section className="card stack-lg">
+                    <div className="section-title-row">
+                        <h2>Aufmerksamkeit</h2>
+                        <span className="text-muted">{attentionNeeded.length} Hinweise</span>
+                    </div>
+                    {attentionNeeded.length === 0 ? (
+                        <p className="text-muted">
+                            Keine auffaelligen Events. Neue Signale erscheinen hier automatisch.
+                        </p>
+                    ) : (
+                        <div className="stack">
+                            {attentionNeeded.map((event) => (
+                                <article key={event.id} className="analysis-card">
+                                    <strong>{event.title}</strong>
+                                    <p>
+                                        {event.pendingBookings} offen &middot;{" "}
+                                        <Percent value={event.fillRate} /> Auslastung &middot;{" "}
+                                        <Percent value={event.conversionRate} /> Conversion
+                                    </p>
+                                </article>
+                            ))}
                         </div>
-                        {attentionNeeded.length === 0 ? (
-                            <p className="text-muted">
-                                Keine auffaelligen Events. Neue Signale erscheinen hier automatisch.
-                            </p>
-                        ) : (
-                            <div className="stack">
-                                {attentionNeeded.map((event) => (
-                                    <article key={event.id} className="analysis-card">
-                                        <strong>{event.title}</strong>
-                                        <p>
-                                            {event.pendingBookings} offen &middot;{" "}
-                                            <Percent value={event.fillRate} /> Auslastung &middot;{" "}
-                                            <Percent value={event.conversionRate} /> Conversion
-                                        </p>
-                                    </article>
-                                ))}
-                            </div>
-                        )}
-                    </section>
-                </div>
+                    )}
+                </section>
 
                 <section className="card stack-lg">
                     <div className="section-title-row">

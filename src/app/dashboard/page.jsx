@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import BookingRow from "@/components/BookingRow";
-import CreateEventForm from "@/components/CreateEventForm";
 import EventCard from "@/components/EventCard";
 import EventRow from "@/components/EventRow";
 import LogoutButton from "@/components/LogoutButton";
@@ -52,12 +51,76 @@ function firstName(user) {
     return user.email.split("@")[0];
 }
 
+function formatEventDate(value) {
+    return new Date(value).toLocaleString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+const DASHBOARD_BOOKING_SELECT = {
+    id: true,
+    eventId: true,
+    attendeeId: true,
+    purchaserName: true,
+    purchaserEmail: true,
+    purchaserPhone: true,
+    notes: true,
+    newsletter: true,
+    quantity: true,
+    currency: true,
+    unitPrice: true,
+    serviceFee: true,
+    totalAmount: true,
+    billingName: true,
+    billingStreet: true,
+    billingStreet2: true,
+    billingPostalCode: true,
+    billingCity: true,
+    billingCountry: true,
+    paymentMethod: true,
+    status: true,
+    paymentProvider: true,
+    paymentReference: true,
+    paidAt: true,
+    paymentReminderCount: true,
+    lastPaymentReminderAt: true,
+    paymentCancelledAt: true,
+    paymentCancellationReason: true,
+    checkedInAt: true,
+    checkedInById: true,
+    checkedInVia: true,
+    transferToName: true,
+    transferToEmail: true,
+    paypalOrderId: true,
+    paypalCaptureId: true,
+    paypalApprovalUrl: true,
+    paypalStatus: true,
+    stripeCheckoutSessionId: true,
+    stripePaymentIntentId: true,
+    stripeStatus: true,
+    providerPayload: true,
+    createdAt: true,
+    updatedAt: true,
+    event: {
+        select: {
+            id: true,
+            title: true,
+            location: true,
+            city: true,
+            startDate: true,
+        },
+    },
+};
+
 export default async function DashboardPage() {
     const user = await getCurrentUser();
     if (!user) redirect("/auth");
-    if (user.role === "ADMIN") redirect("/admin");
 
-    const isOrganizer = user.role === "ORGANIZER";
+    const isOrganizer = user.role !== "VISITOR";
 
     return (
         <main className="container dash">
@@ -69,7 +132,11 @@ export default async function DashboardPage() {
                             isOrganizer ? "dash__role--organizer" : ""
                         }`}
                     >
-                        {isOrganizer ? "Veranstalter" : "Besucher"}
+                        {user.role === "ADMIN"
+                            ? "Admin"
+                            : isOrganizer
+                              ? "Veranstalter"
+                              : "Besucher"}
                     </span>
                 </div>
                 <div className="dash__actions">
@@ -82,6 +149,11 @@ export default async function DashboardPage() {
                     {isOrganizer ? (
                         <Link href="/dashboard/bookings" className="btn btn-ghost">
                             Buchungen
+                        </Link>
+                    ) : null}
+                    {user.role === "ADMIN" ? (
+                        <Link href="/admin" className="btn btn-ghost">
+                            Admin
                         </Link>
                     ) : null}
                     {isOrganizer ? (
@@ -137,17 +209,7 @@ async function OrganizerView({ user }) {
         prisma.booking.findMany({
             where: getBookingAccessWhere(user),
             orderBy: { createdAt: "desc" },
-            include: {
-                event: {
-                    select: {
-                        id: true,
-                        title: true,
-                        location: true,
-                        city: true,
-                        startDate: true,
-                    },
-                },
-            },
+            select: DASHBOARD_BOOKING_SELECT,
         }),
         prisma.organization.findMany({
             where:
@@ -208,7 +270,6 @@ async function OrganizerView({ user }) {
     const now = new Date();
     const upcoming = events.filter((event) => new Date(event.startDate) >= now);
     const past = events.filter((event) => new Date(event.startDate) < now);
-    const free = events.filter((event) => Number(event.price) === 0);
     const drafts = events.filter((event) => event.status === "DRAFT");
     const cancelled = events.filter((event) => event.status === "CANCELLED");
     const paidBookings = bookings.filter((booking) => booking.status === "PAID");
@@ -240,91 +301,140 @@ async function OrganizerView({ user }) {
         (sum, organization) => sum + organization.members.length,
         0
     );
+    const nextEvent = upcoming[0] ?? null;
+    const primaryMetrics = [
+        {
+            label: "Umsatz",
+            value: formatMoney(revenue),
+            detail: `${paidBookings.length} bezahlte Buchungen`,
+            tone: "revenue",
+        },
+        {
+            label: "Check-in",
+            value: `${attendanceRate}%`,
+            detail: `${totalCheckedInTickets} von ${totalPaidTickets} Tickets`,
+            tone: "checkin",
+        },
+        {
+            label: "Offene Buchungen",
+            value: pendingBookings.length,
+            detail: `${bookings.length} Buchungen gesamt`,
+            tone: "pending",
+        },
+    ];
+    const eventMetrics = [
+        { label: "Kommend", value: upcoming.length },
+        { label: "Entwürfe", value: drafts.length },
+        { label: "Vergangen", value: past.length },
+        { label: "Abgesagt", value: cancelled.length },
+    ];
+    const audienceMetrics = [
+        { label: "Kontakte", value: customerCount },
+        { label: "Wiederkäufer", value: repeatCustomers },
+        { label: "No-Shows", value: noShowTickets },
+        { label: "Teams", value: teamMemberCount },
+    ];
 
     return (
         <>
-            <div className="stats">
-                <div className="stat">
-                    <div className="stat__value">{events.length}</div>
-                    <div className="stat__label">Events gesamt</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{upcoming.length}</div>
-                    <div className="stat__label">Kommend</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{past.length}</div>
-                    <div className="stat__label">Vergangen</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{free.length}</div>
-                    <div className="stat__label">Kostenlos</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{drafts.length}</div>
-                    <div className="stat__label">Entwürfe</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{cancelled.length}</div>
-                    <div className="stat__label">Abgesagt</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{bookings.length}</div>
-                    <div className="stat__label">Buchungen</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{paidBookings.length}</div>
-                    <div className="stat__label">Bezahlt</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{formatMoney(revenue)}</div>
-                    <div className="stat__label">Umsatz</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{totalCheckedInTickets}</div>
-                    <div className="stat__label">Anwesend</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{attendanceRate}%</div>
-                    <div className="stat__label">Check-in-Quote</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{noShowTickets}</div>
-                    <div className="stat__label">No-Show</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{customerCount}</div>
-                    <div className="stat__label">Kontakte</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{repeatCustomers}</div>
-                    <div className="stat__label">Wiederkäufer</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{organizationCount}</div>
-                    <div className="stat__label">Organisationen</div>
-                </div>
-                <div className="stat">
-                    <div className="stat__value">{teamMemberCount}</div>
-                    <div className="stat__label">Teammitglieder</div>
-                </div>
-            </div>
-
-            <div className="dash__grid dash__grid--split">
-                <div className="dash__sticky">
-                    <CreateEventForm organizations={organizations} />
+            <section className="dashboard-overview" aria-label="Dashboard Kennzahlen">
+                <div className="dashboard-command">
+                    <div>
+                        <span className="eyebrow">Planung</span>
+                        <h2>Event erstellen</h2>
+                        <p className="text-muted">
+                            Neues Event mit Tickets, Zahlungsarten und optionalem Sitzplan anlegen.
+                        </p>
+                    </div>
+                    <Link href="/dashboard/events/new" className="btn btn-primary">
+                        Event erstellen
+                    </Link>
                 </div>
 
-                <div>
+                <div className="dashboard-kpis">
+                    {primaryMetrics.map((metric) => (
+                        <article
+                            key={metric.label}
+                            className={`dashboard-kpi dashboard-kpi--${metric.tone}`}
+                        >
+                            <span>{metric.label}</span>
+                            <strong>{metric.value}</strong>
+                            <small>{metric.detail}</small>
+                        </article>
+                    ))}
+                </div>
+
+                <div className="dashboard-summary-grid">
+                    <section className="dashboard-summary">
+                        <div className="section-title-row">
+                            <h2>Event-Pipeline</h2>
+                            <span className="text-muted">{events.length} gesamt</span>
+                        </div>
+                        <div className="dashboard-mini-kpis">
+                            {eventMetrics.map((metric) => (
+                                <div key={metric.label} className="dashboard-mini-kpi">
+                                    <strong>{metric.value}</strong>
+                                    <span>{metric.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="dashboard-summary">
+                        <div className="section-title-row">
+                            <h2>Publikum</h2>
+                            <span className="text-muted">{organizationCount} Organisationen</span>
+                        </div>
+                        <div className="dashboard-mini-kpis">
+                            {audienceMetrics.map((metric) => (
+                                <div key={metric.label} className="dashboard-mini-kpi">
+                                    <strong>{metric.value}</strong>
+                                    <span>{metric.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="dashboard-summary">
+                        <div className="section-title-row">
+                            <h2>Nächstes Event</h2>
+                            {nextEvent ? (
+                                <Link href={`/dashboard/events/${nextEvent.id}/edit`} className="nav__link">
+                                    Bearbeiten
+                                </Link>
+                            ) : null}
+                        </div>
+                        {nextEvent ? (
+                            <div className="dashboard-next-event">
+                                <strong>{nextEvent.title}</strong>
+                                <span>{nextEvent.location}, {nextEvent.city}</span>
+                                <span>{formatEventDate(nextEvent.startDate)}</span>
+                                <span>
+                                    {nextEvent.attendance.checkedInTickets} /{" "}
+                                    {nextEvent.attendance.paidTickets} eingecheckt
+                                </span>
+                            </div>
+                        ) : (
+                            <p className="text-muted">Noch kein kommendes Event geplant.</p>
+                        )}
+                    </section>
+                </div>
+            </section>
+
+            <div className="dashboard-workspace">
+                <section className="dashboard-panel dashboard-panel--wide">
                     <div className="section-title-row">
                         <h2>Deine Events</h2>
                         <span className="text-muted">{events.length} gesamt</span>
                     </div>
 
+                    <div className="dashboard-panel__body">
                     {events.length === 0 ? (
                         <div className="empty-state">
-                            <div className="empty-state__icon">📅</div>
-                            <p>Du hast noch keine Events erstellt. Leg links dein erstes an!</p>
+                            <p>Du hast noch keine Events erstellt.</p>
+                            <Link href="/dashboard/events/new" className="btn btn-primary">
+                                Erstes Event erstellen
+                            </Link>
                         </div>
                     ) : (
                         <div className="stack">
@@ -354,93 +464,115 @@ async function OrganizerView({ user }) {
                             ) : null}
                         </div>
                     )}
-                </div>
-            </div>
+                    </div>
+                </section>
 
-            <div className="section-title-row mt-l">
-                <h2>Buchungen</h2>
-                <span className="text-muted">
-                    {bookings.length} gesamt, {pendingBookings.length} offen
-                </span>
-            </div>
+                <section className="dashboard-panel">
+                    <div className="section-title-row">
+                        <h2>Buchungen</h2>
+                        <Link href="/dashboard/bookings" className="nav__link">
+                            Verwalten →
+                        </Link>
+                    </div>
+                    <div className="dashboard-panel__body">
+                        <p className="text-muted">
+                            {bookings.length} gesamt, {pendingBookings.length} offen
+                        </p>
 
-                <div className="dash__actions mb-s">
-                    <Link href="/dashboard/bookings" className="btn btn-primary">
-                        Buchungen verwalten
-                    </Link>
-                    <Link href="/dashboard/analytics" className="btn btn-ghost">
-                        Analytics
-                    </Link>
-                    <Link href="/dashboard/organizations" className="btn btn-ghost">
-                        Organisationen
-                    </Link>
-                </div>
-
-            <div className="section-title-row mt-l">
-                <h2>Organisationen</h2>
-                <Link href="/dashboard/organizations" className="nav__link">
-                    Verwalten →
-                </Link>
-            </div>
-
-            {organizations.length === 0 ? (
-                <div className="empty-state">
-                    <div className="empty-state__icon">👥</div>
-                    <p>Noch keine Organisationen angelegt.</p>
-                </div>
-            ) : (
-                <div className="stack">
-                    {organizations.map((organization) => (
-                        <article key={organization.id} className="analysis-card">
-                            <strong>{organization.name}</strong>
+                    {bookings.length === 0 ? (
+                        <div className="empty-state">
                             <p>
-                                {organization.members.length} Teammitglieder ·{" "}
-                                {organization.events.length} Events
+                                Hier erscheinen alle Buchungen deiner Events, sobald jemand über
+                                GateKeeper reserviert.
                             </p>
-                        </article>
-                    ))}
-                </div>
-            )}
+                        </div>
+                    ) : (
+                        <div className="stack">
+                            {bookings.slice(0, 6).map((booking) => (
+                                <BookingRow key={booking.id} booking={booking} />
+                            ))}
+                        </div>
+                    )}
+                    </div>
+                </section>
 
-            {bookings.length === 0 ? (
-                <div className="empty-state">
-                    <div className="empty-state__icon">💳</div>
-                    <p>
-                        Hier erscheinen alle Buchungen deiner Events, sobald jemand über
-                        PayPal reserviert.
-                    </p>
-                </div>
-            ) : (
-                <div className="stack">
-                    {bookings.slice(0, 8).map((booking) => (
-                        <BookingRow key={booking.id} booking={booking} />
-                    ))}
-                </div>
-            )}
+                <section className="dashboard-panel">
+                    <div className="section-title-row">
+                        <h2>Organisationen</h2>
+                        <Link href="/dashboard/organizations" className="nav__link">
+                            Verwalten →
+                        </Link>
+                    </div>
 
-            <div className="section-title-row mt-l">
-                <h2>Letzte Einlass-Scans</h2>
-                <span className="text-muted">{recentCheckIns.length} aktuell</span>
+                    <div className="dashboard-panel__body">
+                    {organizations.length === 0 ? (
+                        <div className="empty-state">
+                            <p>Noch keine Organisationen angelegt.</p>
+                        </div>
+                    ) : (
+                        <div className="stack">
+                            {organizations.map((organization) => (
+                                <article key={organization.id} className="analysis-card">
+                                    <strong>{organization.name}</strong>
+                                    <p>
+                                        {organization.members.length} Teammitglieder ·{" "}
+                                        {organization.events.length} Events
+                                    </p>
+                                </article>
+                            ))}
+                        </div>
+                    )}
+                    </div>
+                </section>
+
+                <section className="dashboard-panel">
+                    <div className="section-title-row">
+                        <h2>Letzte Einlass-Scans</h2>
+                        <Link href="/dashboard/check-in" className="nav__link">
+                            Check-in →
+                        </Link>
+                    </div>
+                    <div className="dashboard-panel__body">
+                        <p className="text-muted">{recentCheckIns.length} aktuell</p>
+
+                    {recentCheckIns.length === 0 ? (
+                        <div className="empty-state">
+                            <p>Noch keine eingecheckten Buchungen vorhanden.</p>
+                        </div>
+                    ) : (
+                        <div className="stack">
+                            {recentCheckIns.map((booking) => (
+                                <article key={booking.id} className="analysis-card">
+                                    <strong>{booking.event?.title ?? "Unbekanntes Event"}</strong>
+                                    <p>
+                                        {booking.purchaserName} ·{" "}
+                                        {new Date(booking.checkedInAt).toLocaleString("de-DE")}
+                                    </p>
+                                </article>
+                            ))}
+                        </div>
+                    )}
+                    </div>
+                </section>
+
+                <section className="dashboard-panel dashboard-panel--actions">
+                    <div className="section-title-row">
+                        <h2>Auswerten</h2>
+                        <span className="text-muted">Berichte und Teams</span>
+                    </div>
+                    <div className="dashboard-action-list">
+                        <Link href="/dashboard/analytics" className="btn btn-ghost">
+                            Analytics öffnen
+                        </Link>
+                        <Link href="/dashboard/organizations" className="btn btn-ghost">
+                            Organisationen verwalten
+                        </Link>
+                        <Link href="/dashboard/venues" className="btn btn-ghost">
+                            Venues verwalten
+                        </Link>
+                    </div>
+                </section>
             </div>
-
-            {recentCheckIns.length === 0 ? (
-                <div className="empty-state">
-                    <div className="empty-state__icon">🎟️</div>
-                    <p>Noch keine eingecheckten Buchungen vorhanden.</p>
-                </div>
-            ) : (
-                <div className="stack">
-                    {recentCheckIns.map((booking) => (
-                        <article key={booking.id} className="analysis-card">
-                            <strong>{booking.event?.title ?? "Unbekanntes Event"}</strong>
-                            <p>
-                                {booking.purchaserName} ·{" "}
-                                {new Date(booking.checkedInAt).toLocaleString("de-DE")}
-                            </p>
-                        </article>
-                    ))}
-                </div>
-            )}
         </>
     );
 }
@@ -481,17 +613,7 @@ async function VisitorView({ user }) {
             },
             orderBy: { createdAt: "desc" },
             take: 3,
-            include: {
-                event: {
-                    select: {
-                        id: true,
-                        title: true,
-                        location: true,
-                        city: true,
-                        startDate: true,
-                    },
-                },
-            },
+            select: DASHBOARD_BOOKING_SELECT,
         }),
         favoriteDelegate?.findMany?.({
             where: { userId: user.id },
@@ -702,7 +824,6 @@ async function VisitorView({ user }) {
 
             {events.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-state__icon">🗓️</div>
                     <p>Aktuell sind keine kommenden Events eingetragen.</p>
                 </div>
             ) : (

@@ -9,16 +9,11 @@ export default async function Nav() {
     return (
         <nav className="nav">
             <div className="container nav__inner">
-                <Link href="/" className="nav__brand">
+                <Link href={user ? "/dashboard" : "/"} className="nav__brand">
                     GateKeeper
                 </Link>
 
                 <ul className="nav__links">
-                    <li>
-                        <Link href="/" className="nav__link">
-                            Events
-                        </Link>
-                    </li>
                     {user ? (
                         <>
                             <li>
@@ -50,11 +45,18 @@ export default async function Nav() {
                             </li>
                         </>
                     ) : (
-                        <li>
-                            <Link href="/auth" className="btn btn-primary">
-                                Anmelden
-                            </Link>
-                        </li>
+                        <>
+                            <li>
+                                <Link href="/#plattform" className="nav__link">
+                                    Plattform
+                                </Link>
+                            </li>
+                            <li>
+                                <Link href="/auth" className="btn btn-primary">
+                                    Dashboard oeffnen
+                                </Link>
+                            </li>
+                        </>
                     )}
                 </ul>
             </div>
