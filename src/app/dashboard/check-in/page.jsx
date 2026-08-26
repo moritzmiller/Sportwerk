@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { summarizeAttendance } from "@/lib/attendance";
 import {
     buildCheckinScanStats,
+    getScanTicketLabel,
     getScanStatusLabel,
     getScanTone,
     summarizeRecentWarnings,
@@ -88,16 +89,18 @@ export default async function CheckInPage() {
         take: 50,
         include: {
             booking: {
-                include: {
-                    event: {
-                        select: {
-                            id: true,
-                            title: true,
-                            location: true,
-                            city: true,
-                            startDate: true,
-                        },
-                    },
+                select: {
+                    id: true,
+                    purchaserName: true,
+                    eventId: true,
+                },
+            },
+            ticket: {
+                select: {
+                    id: true,
+                    holderName: true,
+                    ticketTypeName: true,
+                    ticketNumber: true,
                 },
             },
             event: {
@@ -106,6 +109,7 @@ export default async function CheckInPage() {
                     title: true,
                     location: true,
                     city: true,
+                    startDate: true,
                 },
             },
             scanner: {
@@ -167,7 +171,7 @@ export default async function CheckInPage() {
                         <div className="stat__label">Abgewiesen</div>
                     </div>
                     <div className="stat">
-                        <div className="stat__value">{scanStats.uniqueBookings}</div>
+                        <div className="stat__value">{scanStats.uniqueTickets}</div>
                         <div className="stat__label">Einzigartige Tickets</div>
                     </div>
                 </div>
@@ -199,7 +203,7 @@ export default async function CheckInPage() {
                                     <strong>{getScanStatusLabel(scan.status)}</strong>
                                     <p>{scan.warning}</p>
                                     <small className="text-muted">
-                                        {new Date(scan.createdAt).toLocaleString("de-DE")} · Ticket {scan.bookingId}
+                                        {new Date(scan.createdAt).toLocaleString("de-DE")} - Ticket {scan.ticketId ?? scan.bookingId} - {getScanTicketLabel(scan)}
                                     </small>
                                 </article>
                             ))}

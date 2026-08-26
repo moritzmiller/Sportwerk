@@ -68,12 +68,19 @@ export function classifyScanWarning(scan, stats = {}) {
 }
 
 export function buildCheckinScanStats(scans = []) {
+    const uniqueTicketKeys = new Set(
+        scans
+            .map((scan) => scan.ticketId ? `ticket:${scan.ticketId}` : scan.bookingId ? `booking:${scan.bookingId}` : null)
+            .filter(Boolean)
+    );
+
     const stats = {
         totalAttempts: scans.length,
         successfulScans: scans.filter((scan) => scan.status === "SCANNED").length,
         duplicateScans: scans.filter((scan) => scan.status === "ALREADY_SCANNED").length,
         rejectedScans: scans.filter((scan) => scan.status === "REJECTED").length,
         invalidScans: scans.filter((scan) => scan.status === "INVALID" || scan.status === "NOT_FOUND").length,
+        uniqueTickets: uniqueTicketKeys.size,
         uniqueBookings: new Set(
             scans.filter((scan) => scan.bookingId).map((scan) => scan.bookingId)
         ).size,
@@ -82,11 +89,27 @@ export function buildCheckinScanStats(scans = []) {
     return stats;
 }
 
+export function getScanTicketLabel(scan) {
+    const holderName = toText(scan.ticket?.holderName);
+    if (holderName) return holderName;
+
+    const purchaserName = toText(scan.booking?.purchaserName);
+    if (purchaserName) return purchaserName;
+
+    if (scan.ticketId) return scan.ticketId;
+    if (scan.bookingId) return scan.bookingId;
+
+    return "Unbekannt";
+}
+
 export function buildCheckinScansCsv(scans = []) {
     const header = [
         "created_at",
         "status",
         "warning",
+        "ticket_id",
+        "ticket_holder_name",
+        "ticket_type",
         "booking_id",
         "event_id",
         "event_title",
@@ -104,6 +127,9 @@ export function buildCheckinScansCsv(scans = []) {
         toIso(scan.createdAt),
         scan.status,
         scan.warning ?? "",
+        scan.ticketId ?? "",
+        scan.ticket?.holderName ?? "",
+        scan.ticket?.ticketTypeName ?? "",
         scan.bookingId ?? "",
         scan.eventId ?? "",
         scan.event?.title ?? "",
@@ -135,6 +161,7 @@ export function summarizeRecentWarnings(scans = []) {
             warning: scan.warning,
             createdAt: scan.createdAt,
             bookingId: scan.bookingId,
+            ticketId: scan.ticketId,
+            ticketLabel: getScanTicketLabel(scan),
         }));
 }
-
