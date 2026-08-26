@@ -4,6 +4,7 @@ import test from "node:test";
 import {
     serializeScannerBooking,
     serializeScannerTicket,
+    serializeScannerTicketRecord,
 } from "../src/lib/scanner-privacy.js";
 
 test("scanner ticket serialization omits purchaser email addresses", () => {
@@ -24,6 +25,31 @@ test("scanner ticket serialization omits purchaser email addresses", () => {
         checkedInAt: "2026-08-26T09:00:00.000Z",
     });
     assert.equal("purchaserEmail" in ticket, false);
+});
+
+test("scanner ticket record serialization omits purchaser email addresses", () => {
+    const ticket = serializeScannerTicketRecord({
+        id: "ticket-1",
+        bookingId: "booking-1",
+        holderName: "Ada Lovelace",
+        status: "CHECKED_IN",
+        checkedInAt: new Date("2026-08-26T09:00:00.000Z"),
+        booking: {
+            purchaserName: "Ada Buyer",
+            purchaserEmail: "ada@example.test",
+        },
+    });
+
+    assert.deepEqual(ticket, {
+        id: "ticket-1",
+        bookingId: "booking-1",
+        purchaserName: "Ada Lovelace",
+        quantity: 1,
+        scanned: true,
+        checkedInAt: "2026-08-26T09:00:00.000Z",
+    });
+    assert.equal("purchaserEmail" in ticket, false);
+    assert.equal(JSON.stringify(ticket).includes("ada@example.test"), false);
 });
 
 test("scanner check-in response serialization omits purchaser email addresses", () => {

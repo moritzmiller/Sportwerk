@@ -114,9 +114,10 @@ export default function EventScanner({ event, token, initialTickets }) {
                 }
 
                 const booking = data.booking;
+                const scannedTicketId = booking.ticketId ?? booking.id;
                 setTickets((current) =>
                     current.map((ticket) =>
-                        ticket.id === booking.id
+                        ticket.id === scannedTicketId
                             ? {
                                   ...ticket,
                                   scanned: true,
