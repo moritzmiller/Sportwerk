@@ -1,5 +1,6 @@
 import { getOptionalCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { createBookingAccessToken } from "@/lib/booking-access";
 import { calculateBookingTotals } from "@/lib/bookings";
 import { createPayPalOrder, isPayPalConfigured } from "@/lib/paypal";
 import {
@@ -409,6 +410,7 @@ export async function POST(request) {
         return Response.json({
             ok: true,
             bookingId: booking.id,
+            accessToken: createBookingAccessToken(booking),
             approvalUrl: booking.paypalApprovalUrl,
             orderId: booking.paypalOrderId,
             reused: true,
@@ -419,6 +421,7 @@ export async function POST(request) {
         return Response.json({
             ok: true,
             bookingId: booking.id,
+            accessToken: createBookingAccessToken(booking),
             approvalUrl: booking.providerPayload?.url ?? null,
             sessionId: booking.stripeCheckoutSessionId,
             reused: true,
@@ -433,6 +436,7 @@ export async function POST(request) {
         return Response.json({
             ok: true,
             bookingId: booking.id,
+            accessToken: createBookingAccessToken(booking),
             approvalUrl: booking.providerPayload.checkoutUrl,
             paymentId: booking.providerPayload.paymentId ?? booking.providerPayload.id ?? null,
             reused: true,
@@ -453,6 +457,7 @@ export async function POST(request) {
         return Response.json({
             ok: true,
             bookingId: paidBooking.id,
+            accessToken: createBookingAccessToken(paidBooking),
             approvalUrl: null,
             orderId: null,
             directComplete: true,
@@ -493,6 +498,7 @@ export async function POST(request) {
         return Response.json({
             ok: true,
             bookingId: manualBooking.id,
+            accessToken: createBookingAccessToken(manualBooking),
             manualComplete: true,
             paymentMethod: manualBooking.paymentMethod,
             paymentReference: manualBooking.paymentReference,
@@ -514,8 +520,9 @@ export async function POST(request) {
         }
 
         const origin = new URL(request.url).origin;
-        const successUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&stripe_session_id={CHECKOUT_SESSION_ID}`;
-        const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&cancelled=1`;
+        const accessToken = createBookingAccessToken(booking);
+        const successUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&stripe_session_id={CHECKOUT_SESSION_ID}`;
+        const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&cancelled=1`;
 
         try {
             const stripeSession = await createStripeCheckoutSession({
@@ -547,6 +554,7 @@ export async function POST(request) {
             return Response.json({
                 ok: true,
                 bookingId: booking.id,
+                accessToken,
                 approvalUrl: stripeSession.url,
                 sessionId: stripeSession.id,
             });
@@ -579,8 +587,9 @@ export async function POST(request) {
         }
 
         const origin = new URL(request.url).origin;
-        const returnUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&paymentProvider=MOLLIE`;
-        const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&cancelled=1`;
+        const accessToken = createBookingAccessToken(booking);
+        const returnUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&paymentProvider=MOLLIE`;
+        const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&cancelled=1`;
         const webhookUrl = `${origin}/api/payments/mollie/webhook`;
 
         try {
@@ -615,6 +624,7 @@ export async function POST(request) {
             return Response.json({
                 ok: true,
                 bookingId: booking.id,
+                accessToken,
                 approvalUrl: molliePayment.checkoutUrl,
                 paymentId: molliePayment.paymentId,
             });
@@ -646,8 +656,9 @@ export async function POST(request) {
     }
 
     const origin = new URL(request.url).origin;
-    const returnUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}`;
-    const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&cancelled=1`;
+    const accessToken = createBookingAccessToken(booking);
+    const returnUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}`;
+    const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&cancelled=1`;
 
     try {
         const paypalOrder = await createPayPalOrder({
@@ -677,6 +688,7 @@ export async function POST(request) {
         return Response.json({
             ok: true,
             bookingId: booking.id,
+            accessToken,
             approvalUrl: paypalOrder.approvalUrl,
             orderId: paypalOrder.orderId,
         });

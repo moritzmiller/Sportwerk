@@ -114,13 +114,13 @@ export default function CheckoutForm({ event, initialCustomer }) {
             }
 
             if (data.directComplete) {
-                window.location.href = `/events/${event.id}/checkout?bookingId=${data.bookingId}`;
+                window.location.href = buildCheckoutReturnUrl(event.id, data.bookingId, data.accessToken);
                 return;
             }
 
             if (data.manualComplete) {
                 setMessage("Deine Buchung wurde gespeichert. Zahlungsdetails folgen.");
-                window.location.href = `/events/${event.id}/checkout?bookingId=${data.bookingId}`;
+                window.location.href = buildCheckoutReturnUrl(event.id, data.bookingId, data.accessToken);
                 return;
             }
 
@@ -539,4 +539,12 @@ export default function CheckoutForm({ event, initialCustomer }) {
             {message && <p className="auth-message">{message}</p>}
         </form>
     );
+}
+
+function buildCheckoutReturnUrl(eventId, bookingId, accessToken) {
+    const params = new URLSearchParams({ bookingId });
+    if (accessToken) {
+        params.set("accessToken", accessToken);
+    }
+    return `/events/${eventId}/checkout?${params.toString()}`;
 }

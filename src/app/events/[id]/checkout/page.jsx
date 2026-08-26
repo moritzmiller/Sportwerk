@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 
 import CheckoutForm from "@/components/CheckoutForm";
 import { getOptionalCurrentUser } from "@/lib/auth";
+import { verifyBookingAccessToken } from "@/lib/booking-access";
 import { prisma } from "@/lib/prisma";
 import { getCategory } from "@/lib/categories";
 import {
@@ -81,9 +82,14 @@ async function loadEvent(id) {
     }
 }
 
-async function resolveReturnBooking(searchParams) {
+function hasAuthenticatedBookingAccess(currentUser, booking) {
+    return Boolean(currentUser?.id && booking?.attendeeId && currentUser.id === booking.attendeeId);
+}
+
+async function resolveReturnBooking(searchParams, currentUser) {
     const rawBookingId = getSearchValue(searchParams?.bookingId);
     const bookingId = rawBookingId ? String(rawBookingId) : null;
+    const accessToken = getSearchValue(searchParams?.accessToken);
     const token = getSearchValue(searchParams?.token);
     const stripeSessionId = getSearchValue(searchParams?.stripe_session_id);
     const cancelled = getSearchValue(searchParams?.cancelled);
@@ -110,6 +116,18 @@ async function resolveReturnBooking(searchParams) {
     });
 
     if (!booking) return null;
+
+    const hasAccess =
+        verifyBookingAccessToken(accessToken, booking) ||
+        hasAuthenticatedBookingAccess(currentUser, booking);
+    const hasPayPalProof = Boolean(token && booking.paypalOrderId === token);
+    const hasStripeProof = Boolean(
+        stripeSessionId && booking.stripeCheckoutSessionId === stripeSessionId
+    );
+
+    if (!hasAccess && !hasPayPalProof && !hasStripeProof) {
+        return null;
+    }
 
     if (booking.status === "PAID" || booking.paymentProvider === "FREE") {
         return serializeBooking(booking);
@@ -671,7 +689,7 @@ export default async function EventCheckoutPage({ params, searchParams }) {
     const cat = getCategory(data.category);
     const price = formatEventPrice(data.price);
 
-    const booking = await resolveReturnBooking(resolvedSearchParams);
+    const booking = await resolveReturnBooking(resolvedSearchParams, currentUser);
 
     const isSuccess =
         booking &&
