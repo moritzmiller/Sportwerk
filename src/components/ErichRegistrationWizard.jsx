@@ -212,11 +212,12 @@ export default function ErichRegistrationWizard({
     const availablePhases = selectedEvent?.pricePhases ?? [];
     const activeCheckoutAttempt = latestPaymentAttempt(selectedBatch);
     const activeManualPayment = manualPaymentDetails(activeCheckoutAttempt);
+    const unifiedCheckoutUrl = selectedEvent?.unifiedEvent?.checkoutUrl ?? "";
     const canStartCheckout =
         summary.count > 0 && (!selectedBatch || selectedBatch.status === "TEMPORARY");
     const canContinueCheckout =
         selectedBatch?.status === "CHECKOUT" && Boolean(activeCheckoutAttempt?.checkoutUrl);
-    const canUseCheckoutButton = canStartCheckout || canContinueCheckout;
+    const canUseCheckoutButton = Boolean(unifiedCheckoutUrl) || canStartCheckout || canContinueCheckout;
     const canRemoveRaceEntries =
         selectedBatch?.status === "TEMPORARY" || selectedBatch?.status === "CHECKOUT";
     const selectedRaceNumbersForAthlete = new Set(
@@ -669,6 +670,11 @@ export default function ErichRegistrationWizard({
         setMessage("");
 
         try {
+            if (unifiedCheckoutUrl && (!selectedBatch || summary.count === 0)) {
+                window.location.assign(unifiedCheckoutUrl);
+                return;
+            }
+
             if (selectedBatch?.status === "CHECKOUT") {
                 if (activeCheckoutAttempt?.checkoutUrl) {
                     window.location.assign(activeCheckoutAttempt.checkoutUrl);
@@ -808,6 +814,16 @@ export default function ErichRegistrationWizard({
                             </strong>
                         </div>
                     ) : null}
+                    {selectedEvent?.unifiedEvent ? (
+                        <div>
+                            <span className="label">Event</span>
+                            <strong>
+                                {selectedEvent.unifiedEvent.status === "PUBLISHED"
+                                    ? "Buchbar"
+                                    : selectedEvent.unifiedEvent.status}
+                            </strong>
+                        </div>
+                    ) : null}
                     {activeManualPayment ? (
                         <>
                             <div>
@@ -843,22 +859,24 @@ export default function ErichRegistrationWizard({
                     {selectedBatch?.status === "TEMPORARY" ? "Draft bereit" : "Draft starten"}
                 </button>
 
-                <div className="erich-provider-switch" aria-label="Zahlungsart">
-                    {[
-                        { value: "STRIPE", label: "Kredit-/Debitkarte" },
-                        { value: "PAYPAL", label: "PayPal" },
-                        { value: "BANK_TRANSFER", label: "Ueberweisung" },
-                    ].map((provider) => (
-                        <button
-                            key={provider.value}
-                            type="button"
-                            className={checkoutProvider === provider.value ? "is-active" : ""}
-                            onClick={() => setCheckoutProvider(provider.value)}
-                        >
-                            {provider.label}
-                        </button>
-                    ))}
-                </div>
+                {unifiedCheckoutUrl && (!selectedBatch || summary.count === 0) ? null : (
+                    <div className="erich-provider-switch" aria-label="Zahlungsart">
+                        {[
+                            { value: "STRIPE", label: "Kredit-/Debitkarte" },
+                            { value: "PAYPAL", label: "PayPal" },
+                            { value: "BANK_TRANSFER", label: "Ueberweisung" },
+                        ].map((provider) => (
+                            <button
+                                key={provider.value}
+                                type="button"
+                                className={checkoutProvider === provider.value ? "is-active" : ""}
+                                onClick={() => setCheckoutProvider(provider.value)}
+                            >
+                                {provider.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 <button
                     type="button"
@@ -871,7 +889,11 @@ export default function ErichRegistrationWizard({
                         !canUseCheckoutButton
                     }
                 >
-                    {selectedBatch?.status === "CHECKOUT" ? "Zahlung fortsetzen" : "Zahlung vorbereiten"}
+                    {unifiedCheckoutUrl && (!selectedBatch || summary.count === 0)
+                        ? "Zur Buchung"
+                        : selectedBatch?.status === "CHECKOUT"
+                          ? "Zahlung fortsetzen"
+                          : "Zahlung vorbereiten"}
                 </button>
             </aside>
 
