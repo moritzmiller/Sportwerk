@@ -98,6 +98,14 @@ export default async function AdminErichReadinessPage({ searchParams }) {
                         <strong>{report.metrics.invoices + report.metrics.tickets}</strong>
                         <span>{report.metrics.exportJobs} Exporte vorbereitet</span>
                     </div>
+                    <div className="admin-metric">
+                        <span className="admin-metric__label">GateKeeper Event</span>
+                        <strong>{report.metrics.unifiedBookings}</strong>
+                        <span>
+                            {report.metrics.unifiedEventStatus ?? "Kein Mapping"} ·{" "}
+                            {report.metrics.unifiedTickets} Tickets
+                        </span>
+                    </div>
                 </section>
 
                 <section className="admin-panel">
