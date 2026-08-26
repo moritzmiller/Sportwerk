@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { calculateBookingTotals, formatMoney } from "@/lib/bookings";
+import { getEventBookingQuestions } from "@/lib/event-options";
 import { formatEventPrice } from "@/lib/events";
 import {
     getPaymentMethodOptions,
@@ -30,6 +31,7 @@ function createInitialForm(initialCustomer, allowedPaymentMethods) {
         billingCountry: initialCustomer?.billingCountry ?? "DE",
         paymentMethod,
         promoCode: "",
+        registrationAnswers: {},
     };
 }
 
@@ -70,11 +72,22 @@ export default function CheckoutForm({ event, initialCustomer }) {
     const normalizedQuantity = Math.min(quantity, maxQuantity);
     const totals = calculateBookingTotals(selectedTicketType?.price ?? event.price, normalizedQuantity);
     const paymentMethods = getPaymentMethodOptions(allowedPaymentMethods, totals.totalAmount);
+    const bookingQuestions = getEventBookingQuestions(event);
 
     function updateField(name, value) {
         setForm((current) => ({
             ...current,
             [name]: value,
+        }));
+    }
+
+    function updateRegistrationAnswer(questionId, value) {
+        setForm((current) => ({
+            ...current,
+            registrationAnswers: {
+                ...current.registrationAnswers,
+                [questionId]: value,
+            },
         }));
     }
 
@@ -97,6 +110,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                     eventId: event.id,
                     quantity: normalizedQuantity,
                     ticketTypeId: selectedTicketType?.id ?? null,
+                    registrationAnswers: form.registrationAnswers,
                     website,
                     formStartedAt,
                     ...form,
@@ -222,6 +236,72 @@ export default function CheckoutForm({ event, initialCustomer }) {
                     </div>
                 </div>
             </section>
+
+            {bookingQuestions.length > 0 ? (
+                <section className="card stack">
+                    <div className="section-title-row">
+                        <h2>Teilnehmerangaben</h2>
+                        <span className="text-muted">Wird mit der Bestellung gespeichert</span>
+                    </div>
+
+                    <div className="grid checkout-form__grid">
+                        {bookingQuestions.map((question) => (
+                            <div key={question.id} className="field">
+                                <label className="label" htmlFor={`registration-${question.id}`}>
+                                    {question.label}
+                                </label>
+                                {question.type === "select" ? (
+                                    <select
+                                        id={`registration-${question.id}`}
+                                        className="select"
+                                        value={form.registrationAnswers[question.id] ?? ""}
+                                        onChange={(e) =>
+                                            updateRegistrationAnswer(question.id, e.target.value)
+                                        }
+                                        required={question.required}
+                                    >
+                                        <option value="">Bitte auswaehlen</option>
+                                        {(question.options ?? []).map((option) => (
+                                            <option key={option} value={option}>
+                                                {option}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : question.type === "checkbox" ? (
+                                    <label className="checkline">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(form.registrationAnswers[question.id])}
+                                            onChange={(e) =>
+                                                updateRegistrationAnswer(question.id, e.target.checked)
+                                            }
+                                            required={question.required}
+                                        />
+                                        <span>{question.label}</span>
+                                    </label>
+                                ) : (
+                                    <input
+                                        id={`registration-${question.id}`}
+                                        type={
+                                            question.type === "number" ||
+                                            question.type === "date" ||
+                                            question.type === "time"
+                                                ? question.type
+                                                : "text"
+                                        }
+                                        className="input"
+                                        value={form.registrationAnswers[question.id] ?? ""}
+                                        onChange={(e) =>
+                                            updateRegistrationAnswer(question.id, e.target.value)
+                                        }
+                                        required={question.required}
+                                    />
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            ) : null}
 
             <section className="card stack">
                 <div className="section-title-row">

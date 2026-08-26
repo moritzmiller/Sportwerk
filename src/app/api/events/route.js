@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canManageOrganization } from "@/lib/permissions";
 import { CATEGORY_MAP } from "@/lib/categories";
 import { normalizeEventStatus } from "@/lib/event-management";
+import { normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { notifyMatchingAlerts } from "@/lib/event-alerts";
 import { normalizeTicketTypes } from "@/lib/ticket-types";
 import { normalizeAllowedPaymentMethods } from "@/lib/payment-methods";
@@ -57,6 +58,8 @@ export async function POST(request) {
     }
 
     const category = CATEGORY_MAP[body.category] ? body.category : "SONSTIGES";
+    const eventType = normalizeEventType(body.eventType);
+    const eventOptions = normalizeEventOptions(eventType, body.eventOptions);
     const status = normalizeEventStatus(body.status, "DRAFT");
     const capacity =
         body.capacity === "" || body.capacity === null || typeof body.capacity === "undefined"
@@ -126,6 +129,8 @@ export async function POST(request) {
             location: normalizeSafeText(body.location, { maxLength: 180 }),
             city: normalizeSafeText(body.city, { maxLength: 100 }) || "Dresden",
             category,
+            eventType,
+            eventOptions,
             status: effectiveStatus,
             allowedPaymentMethods,
             startDate: new Date(body.startDate),
@@ -164,6 +169,7 @@ export async function POST(request) {
                 capacity: event.capacity,
                 organizationId: event.organizationId,
                 allowedPaymentMethods,
+                eventType,
                 publishBlocked,
                 organizationVerificationStatus: organization?.verificationStatus ?? null,
             },

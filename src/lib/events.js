@@ -1,4 +1,5 @@
 import { serializeTicketType } from "./ticket-types.js";
+import { normalizeEventOptions, normalizeEventType } from "./event-options.js";
 
 function toIsoString(value) {
     if (!value) return null;
@@ -15,6 +16,8 @@ export function serializeEvent(event) {
         location: event.location,
         city: event.city,
         category: event.category,
+        eventType: normalizeEventType(event.eventType),
+        eventOptions: normalizeEventOptions(event.eventType, event.eventOptions),
         status: event.status ?? "PUBLISHED",
         allowedPaymentMethods: event.allowedPaymentMethods ?? null,
         startDate: toIsoString(event.startDate),

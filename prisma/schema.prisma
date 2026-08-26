@@ -56,29 +56,31 @@ model User {
 }
 
 model Event {
-  id                 Int         @id @default(autoincrement())
-  title              String
-  description        String?
-  imageUrl           String?
-  location           String
-  city               String      @default("Dresden")
-  category           Category    @default(SONSTIGES)
-  status             EventStatus @default(PUBLISHED)
+  id                    Int             @id @default(autoincrement())
+  title                 String
+  description           String?
+  imageUrl              String?
+  location              String
+  city                  String          @default("Dresden")
+  category              Category        @default(SONSTIGES)
+  eventType             EventType       @default(STANDARD)
+  eventOptions          Json?
+  status                EventStatus     @default(PUBLISHED)
   allowedPaymentMethods PaymentMethod[] @default([STRIPE, MOLLIE_PAY_BY_BANK, PAYPAL, INVOICE, BANK_TRANSFER])
-  startDate          DateTime
-  price              Float
-  capacity           Int?
-  soldTickets        Int         @default(0)
-  viewCount          Int         @default(0)
-  publishedAt        DateTime?
-  cancelledAt        DateTime?
-  cancellationReason String?
-  duplicateOfId      Int?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @default(now()) @updatedAt
-  ownerId            String
-  organizationId     String?
-  venueId            String?
+  startDate             DateTime
+  price                 Float
+  capacity              Int?
+  soldTickets           Int             @default(0)
+  viewCount             Int             @default(0)
+  publishedAt           DateTime?
+  cancelledAt           DateTime?
+  cancellationReason    String?
+  duplicateOfId         Int?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @default(now()) @updatedAt
+  ownerId               String
+  organizationId        String?
+  venueId               String?
 
   bookings     Booking[]
   tickets      Ticket[]
@@ -100,6 +102,7 @@ model Event {
   members      EventMember[]
 
   @@index([ownerId])
+  @@index([eventType, status, startDate])
   @@index([status])
   @@index([startDate])
   @@index([organizationId])
@@ -153,6 +156,7 @@ model Booking {
   stripePaymentIntentId     String?          @unique
   stripeStatus              String?
   providerPayload           Json?
+  registrationData          Json?
   createdAt                 DateTime         @default(now())
   updatedAt                 DateTime         @updatedAt
   event                     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -165,7 +169,9 @@ model Booking {
   payments                  Payment[]
 
   @@index([eventId])
+  @@index([eventId, status, createdAt])
   @@index([attendeeId])
+  @@index([purchaserEmail, createdAt])
   @@index([status])
   @@index([checkedInAt])
   @@index([ticketTypeId])
@@ -173,19 +179,20 @@ model Booking {
 }
 
 model Ticket {
-  id            String           @id @default(cuid())
-  eventId       Int
-  bookingId     String
-  ticketTypeId  String?
+  id             String       @id @default(cuid())
+  eventId        Int
+  bookingId      String
+  ticketTypeId   String?
   ticketTypeName String?
-  ticketNumber  Int
-  holderName    String?
-  status        TicketStatus     @default(VALID)
-  checkedInAt   DateTime?
-  checkedInById String?
-  checkedInVia  String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  ticketNumber   Int
+  holderName     String?
+  status         TicketStatus @default(VALID)
+  checkedInAt    DateTime?
+  checkedInById  String?
+  checkedInVia   String?
+  holderDetails  Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   booking     Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -195,6 +202,7 @@ model Ticket {
 
   @@unique([bookingId, ticketNumber])
   @@index([eventId, status])
+  @@index([eventId, ticketNumber])
   @@index([bookingId])
   @@index([ticketTypeId])
   @@index([checkedInAt])
@@ -1409,20 +1417,20 @@ enum BookingStatus {
 }
 
 model PromoCode {
-  id              String    @id @default(cuid())
-  eventId         Int
-  code            String
-  description     String?
-  percentOff      Float?
-  amountOff       Float?
-  maxRedemptions  Int?
-  redeemedCount   Int       @default(0)
-  validFrom       DateTime?
-  validUntil      DateTime?
-  active          Boolean   @default(true)
-  ticketTypeIds   String[]  @default([])
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  eventId        Int
+  code           String
+  description    String?
+  percentOff     Float?
+  amountOff      Float?
+  maxRedemptions Int?
+  redeemedCount  Int       @default(0)
+  validFrom      DateTime?
+  validUntil     DateTime?
+  active         Boolean   @default(true)
+  ticketTypeIds  String[]  @default([])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   bookings Booking[]
@@ -1434,23 +1442,23 @@ model PromoCode {
 }
 
 model Payment {
-  id                  String              @id @default(cuid())
-  bookingId           String
-  provider            PaymentProvider
-  providerPaymentId   String?
-  providerCheckoutId  String?
-  method              PaymentMethod
-  status              PaymentStatus       @default(PENDING)
-  amountCents         Int
-  currency            String              @default("EUR")
-  idempotencyKey      String              @unique
-  providerPayload     Json?
-  failureCode         String?
-  failureMessage      String?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  confirmedAt         DateTime?
-  cancelledAt         DateTime?
+  id                 String          @id @default(cuid())
+  bookingId          String
+  provider           PaymentProvider
+  providerPaymentId  String?
+  providerCheckoutId String?
+  method             PaymentMethod
+  status             PaymentStatus   @default(PENDING)
+  amountCents        Int
+  currency           String          @default("EUR")
+  idempotencyKey     String          @unique
+  providerPayload    Json?
+  failureCode        String?
+  failureMessage     String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  confirmedAt        DateTime?
+  cancelledAt        DateTime?
 
   booking       Booking               @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   ledgerEntries PaymentLedgerEntry[]
@@ -1464,18 +1472,18 @@ model Payment {
 }
 
 model PaymentLedgerEntry {
-  id              String                 @id @default(cuid())
-  paymentId       String
-  bookingId       String
-  type            PaymentLedgerEntryType
-  direction       LedgerDirection
-  amountCents     Int
-  currency        String                 @default("EUR")
-  referenceType   String?
-  referenceId     String?
-  description     String?
-  metadata        Json?
-  createdAt       DateTime               @default(now())
+  id            String                 @id @default(cuid())
+  paymentId     String
+  bookingId     String
+  type          PaymentLedgerEntryType
+  direction     LedgerDirection
+  amountCents   Int
+  currency      String                 @default("EUR")
+  referenceType String?
+  referenceId   String?
+  description   String?
+  metadata      Json?
+  createdAt     DateTime               @default(now())
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
@@ -1581,6 +1589,11 @@ enum EventStatus {
   CANCELLED
   POSTPONED
   SOLD_OUT
+}
+
+enum EventType {
+  STANDARD
+  ERICH
 }
 
 enum EventInteractionType {

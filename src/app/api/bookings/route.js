@@ -26,6 +26,7 @@ import {
     normalizePaymentMethod,
 } from "@/lib/payment-methods";
 import { canReserveSeats, getReservationDelta } from "@/lib/capacity";
+import { normalizeRegistrationAnswers } from "@/lib/event-options";
 import {
     createFallbackTicketType,
     resolveRequestedTicketType,
@@ -225,6 +226,10 @@ export async function POST(request) {
     }
 
     const totals = calculateBookingTotals(selectedTicketType.price, quantity, discountAmount);
+    const registration = normalizeRegistrationAnswers(event, body.registrationAnswers);
+    if (registration.errors.length > 0) {
+        return jsonError(registration.errors[0], 400);
+    }
 
     if (!isPaymentMethodAllowed(event, paymentMethod)) {
         return jsonError("Diese Zahlungsmethode ist fuer dieses Event nicht freigegeben.", 400);
@@ -309,6 +314,7 @@ export async function POST(request) {
                         ticketTypeName: selectedTicketType.name,
                         promoCodeId: promoCode?.id ?? null,
                         promoCode: promoCode?.code ?? null,
+                        registrationData: registration.data,
                     },
                 });
 
@@ -376,6 +382,7 @@ export async function POST(request) {
                         promoCode: promoCode?.code ?? null,
                         status: "AWAITING_PAYMENT",
                         paymentProvider: paymentMethod,
+                        registrationData: registration.data,
                     },
                 });
 
