@@ -43,6 +43,14 @@ export async function GET(request) {
                     eventId: true,
                 },
             },
+            ticket: {
+                select: {
+                    id: true,
+                    holderName: true,
+                    ticketTypeName: true,
+                    ticketNumber: true,
+                },
+            },
             event: {
                 select: {
                     id: true,
