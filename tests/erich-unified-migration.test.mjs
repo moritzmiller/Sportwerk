@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     applyUnifiedMigrationPlanFromErichBatch,
+    attachUnifiedEventsToErichEvents,
     buildErichEventLookup,
     buildErichBatchBookingLookup,
     buildUnifiedEventCreateDataFromErichEvent,
@@ -14,6 +15,7 @@ import {
     centsToEuros,
     mapErichPaymentProvider,
     mapErichRegistrationStatus,
+    syncUnifiedBookingFromErichBatch,
 } from "../src/lib/erich/unified-migration.js";
 
 const raceEntry = {
@@ -184,6 +186,27 @@ test("ERICH unified event helper creates missing mapped events and reuses existi
     assert.equal(calls.filter(([name]) => name === "event.create").length, 1);
 });
 
+test("ERICH public event helper attaches unified checkout URLs", () => {
+    const [event] = attachUnifiedEventsToErichEvents(
+        [{ id: "erich-event-1", name: "ERICH Cup" }],
+        [
+            {
+                id: 42,
+                title: "ERICH Cup",
+                status: "PUBLISHED",
+                eventOptions: {
+                    legacySource: {
+                        erichEventId: "erich-event-1",
+                    },
+                },
+            },
+        ]
+    );
+
+    assert.equal(event.unifiedEvent.id, 42);
+    assert.equal(event.unifiedEvent.checkoutUrl, "/events/42/checkout");
+});
+
 test("ERICH payment maps to a unified payment create payload", () => {
     const unifiedPayment = buildUnifiedPaymentCreateDataFromErichPayment({
         payment,
@@ -323,4 +346,68 @@ test("ERICH apply helper skips already migrated batches by legacy lookup", async
     assert.equal(result.action, "skipped");
     assert.equal(result.reason, "booking-exists");
     assert.equal(result.bookingId, "existing-booking");
+});
+
+test("ERICH sync helper skips when no unified event mapping exists", async () => {
+    const tx = {
+        event: {
+            findFirst: async () => null,
+        },
+        booking: {},
+        ticket: {},
+        payment: {},
+    };
+
+    const result = await syncUnifiedBookingFromErichBatch(tx, { batch });
+
+    assert.equal(result.action, "skipped");
+    assert.equal(result.reason, "unified-event-not-found");
+    assert.equal(result.legacySource.batchId, "batch-1");
+});
+
+test("ERICH sync helper updates existing unified booking and payment", async () => {
+    const calls = [];
+    const tx = {
+        event: {
+            findFirst: async (args) => {
+                calls.push(["event.findFirst", args]);
+                return { id: 42 };
+            },
+        },
+        booking: {
+            findFirst: async (args) => {
+                calls.push(["booking.findFirst", args]);
+                return { id: "booking-1", quantity: 2, ticketTypeId: null };
+            },
+            update: async (args) => {
+                calls.push(["booking.update", args]);
+                return { ...args.data, id: args.where.id };
+            },
+        },
+        ticket: {
+            createMany: async (args) => {
+                calls.push(["ticket.createMany", args]);
+                return { count: args.data.length };
+            },
+        },
+        payment: {
+            findUnique: async (args) => {
+                calls.push(["payment.findUnique", args]);
+                return { id: "payment-row-1" };
+            },
+            update: async (args) => {
+                calls.push(["payment.update", args]);
+                return { ...args.data, id: args.where.id };
+            },
+        },
+    };
+
+    const result = await syncUnifiedBookingFromErichBatch(tx, { batch });
+
+    assert.equal(result.action, "updated");
+    assert.equal(result.bookingId, "booking-1");
+    assert.equal(result.paymentAction, "updated");
+    assert.ok(calls.some(([name]) => name === "booking.update"));
+    assert.ok(calls.some(([name]) => name === "ticket.createMany"));
+    assert.ok(calls.some(([name]) => name === "payment.update"));
 });

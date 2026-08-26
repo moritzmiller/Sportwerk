@@ -2,6 +2,7 @@ import ErichRegistrationWizard from "@/components/ErichRegistrationWizard";
 import { getCurrentUserWithErichRoles } from "@/lib/auth";
 import { getOptionalErichGuestUser } from "@/lib/erich/guest-session";
 import { erichRegistrationBatchInclude } from "@/lib/erich/registration-service";
+import { attachUnifiedEventsToErichEvents } from "@/lib/erich/unified-migration";
 import { prisma } from "@/lib/prisma";
 import {
     getMissingPublicTables,
@@ -24,7 +25,7 @@ function serialize(value) {
 
 async function loadWizardData(user) {
     const accountWhere = user?.id ? { accountId: user.id } : { id: "" };
-    const [events, clubs, athletes, batches] = await Promise.all([
+    const [events, unifiedEvents, clubs, athletes, batches] = await Promise.all([
         prisma.erichEvent.findMany({
             where: { status: "ACTIVE" },
             orderBy: { startsAt: "asc" },
@@ -81,6 +82,16 @@ async function loadWizardData(user) {
                 },
             },
         }),
+        prisma.event.findMany({
+            where: { eventType: "ERICH" },
+            orderBy: { startDate: "asc" },
+            select: {
+                id: true,
+                title: true,
+                status: true,
+                eventOptions: true,
+            },
+        }),
         Promise.resolve([]),
         prisma.erichAthlete.findMany({
             where: accountWhere,
@@ -105,7 +116,12 @@ async function loadWizardData(user) {
         }),
     ]);
 
-    return serialize({ events, clubs, athletes, batches });
+    return serialize({
+        events: attachUnifiedEventsToErichEvents(events, unifiedEvents),
+        clubs,
+        athletes,
+        batches,
+    });
 }
 
 function ErichSetupRequired({ missingTables = [] }) {

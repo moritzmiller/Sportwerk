@@ -18,6 +18,7 @@ import {
     isStripeConfigured,
     retrieveStripeCheckoutSession,
 } from "../stripe.js";
+import { syncUnifiedBookingFromErichBatch } from "./unified-migration.js";
 
 export const ERICH_REGISTRATION_CHECKOUT_PROVIDERS = Object.freeze({
     BANK_TRANSFER: "BANK_TRANSFER",
@@ -65,6 +66,21 @@ export function assertCanAccessRegistrationBatch({ user, batch }) {
 
 export function erichRegistrationBatchInclude() {
     return {
+        account: {
+            select: {
+                id: true,
+                name: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                billingName: true,
+                billingStreet: true,
+                billingStreet2: true,
+                billingPostalCode: true,
+                billingCity: true,
+                billingCountry: true,
+            },
+        },
         raceEntries: {
             include: {
                 athlete: {
@@ -633,6 +649,10 @@ export async function startRegistrationCheckout(store, {
                 },
             },
         });
+        const unifiedBookingSync = await syncUnifiedBookingFromErichBatch(tx, {
+            batch: updatedBatch,
+            now,
+        });
 
         return {
             batch: {
@@ -652,6 +672,7 @@ export async function startRegistrationCheckout(store, {
                 manualPayment: providerPayload.manualPayment ?? null,
             },
             summary,
+            unifiedBookingSync,
         };
     });
 
@@ -851,6 +872,10 @@ export async function captureRegistrationPayPalCheckout(store, {
             where: { id: batch.id },
             include: erichRegistrationBatchInclude(),
         });
+        const unifiedBookingSync = await syncUnifiedBookingFromErichBatch(tx, {
+            batch: updatedBatch,
+            now,
+        });
 
         return {
             batch: {
@@ -861,6 +886,7 @@ export async function captureRegistrationPayPalCheckout(store, {
             paymentAttempt: updatedAttempt,
             capture,
             alreadyPaid: false,
+            unifiedBookingSync,
         };
     });
 }
@@ -1015,6 +1041,10 @@ export async function captureRegistrationStripeCheckout(store, {
             where: { id: batch.id },
             include: erichRegistrationBatchInclude(),
         });
+        const unifiedBookingSync = await syncUnifiedBookingFromErichBatch(tx, {
+            batch: updatedBatch,
+            now,
+        });
 
         return {
             batch: {
@@ -1025,6 +1055,7 @@ export async function captureRegistrationStripeCheckout(store, {
             paymentAttempt: updatedAttempt,
             session,
             alreadyPaid: transition.reason === "already-paid",
+            unifiedBookingSync,
         };
     });
 }

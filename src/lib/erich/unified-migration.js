@@ -215,6 +215,28 @@ export async function ensureUnifiedEventForErichEvent(tx, {
     };
 }
 
+export function attachUnifiedEventsToErichEvents(erichEvents = [], unifiedEvents = []) {
+    const unifiedByErichEventId = new Map();
+
+    for (const event of Array.isArray(unifiedEvents) ? unifiedEvents : []) {
+        const erichEventId = event?.eventOptions?.legacySource?.erichEventId;
+        if (!erichEventId || unifiedByErichEventId.has(erichEventId)) continue;
+
+        unifiedByErichEventId.set(erichEventId, {
+            id: event.id,
+            title: event.title,
+            status: event.status,
+            checkoutUrl: event.status === "PUBLISHED" ? `/events/${event.id}/checkout` : null,
+            eventUrl: `/events/${event.id}`,
+        });
+    }
+
+    return (Array.isArray(erichEvents) ? erichEvents : []).map((event) => ({
+        ...event,
+        unifiedEvent: unifiedByErichEventId.get(event.id) ?? null,
+    }));
+}
+
 export function buildUnifiedBookingCreateDataFromErichBatch({
     batch,
     eventId,
@@ -495,6 +517,120 @@ export async function applyUnifiedMigrationPlanFromErichBatch(tx, {
     return {
         action: "created",
         bookingId: booking.id,
+        ticketCount: plan.tickets.length,
+        paymentAction,
+        legacySource: plan.legacySource,
+    };
+}
+
+export async function syncUnifiedBookingFromErichBatch(tx, {
+    batch,
+    ticketType = null,
+    now = new Date(),
+} = {}) {
+    if (!tx?.booking || !tx?.ticket || !tx?.payment || !tx?.event) {
+        return {
+            action: "skipped",
+            reason: "unified-delegates-not-available",
+            legacySource: {
+                batchId: batch?.id ?? null,
+                erichEventId: batch?.eventId ?? null,
+            },
+        };
+    }
+    if (!batch?.id) throw new Error("batch is required.");
+
+    const unifiedEvent = await findUnifiedEventForErichEvent(tx, batch.eventId, { id: true });
+    if (!unifiedEvent) {
+        return {
+            action: "skipped",
+            reason: "unified-event-not-found",
+            legacySource: {
+                batchId: batch.id,
+                erichEventId: batch.eventId,
+            },
+        };
+    }
+
+    const existingBooking = await tx.booking.findFirst({
+        where: buildErichBatchBookingLookup(batch.id),
+        select: { id: true, quantity: true, ticketTypeId: true },
+    });
+
+    if (!existingBooking) {
+        return applyUnifiedMigrationPlanFromErichBatch(tx, {
+            batch,
+            eventId: unifiedEvent.id,
+            ticketType,
+            now,
+        });
+    }
+
+    const bookingData = buildUnifiedBookingCreateDataFromErichBatch({
+        batch,
+        eventId: unifiedEvent.id,
+        ticketType,
+        now,
+    });
+    const plan = buildUnifiedMigrationPlanFromErichBatch({
+        batch,
+        eventId: unifiedEvent.id,
+        bookingId: existingBooking.id,
+        ticketType,
+        now,
+    });
+
+    const bookingUpdateData = { ...bookingData };
+    delete bookingUpdateData.eventId;
+    delete bookingUpdateData.attendeeId;
+    delete bookingUpdateData.ticketTypeId;
+    delete bookingUpdateData.createdAt;
+
+    await tx.booking.update({
+        where: { id: existingBooking.id },
+        data: bookingUpdateData,
+    });
+
+    if (plan.tickets.length > 0) {
+        await tx.ticket.createMany({
+            data: plan.tickets,
+            skipDuplicates: true,
+        });
+    }
+
+    let paymentAction = "none";
+    if (plan.payment) {
+        const existingPayment = await tx.payment.findUnique({
+            where: { idempotencyKey: plan.payment.idempotencyKey },
+            select: { id: true },
+        });
+
+        if (existingPayment) {
+            await tx.payment.update({
+                where: { id: existingPayment.id },
+                data: {
+                    provider: plan.payment.provider,
+                    providerPaymentId: plan.payment.providerPaymentId,
+                    providerCheckoutId: plan.payment.providerCheckoutId,
+                    method: plan.payment.method,
+                    status: plan.payment.status,
+                    amountCents: plan.payment.amountCents,
+                    currency: plan.payment.currency,
+                    providerPayload: plan.payment.providerPayload,
+                    confirmedAt: plan.payment.confirmedAt,
+                    cancelledAt: plan.payment.cancelledAt,
+                },
+            });
+            paymentAction = "updated";
+        } else {
+            await tx.payment.create({ data: plan.payment });
+            paymentAction = "created";
+        }
+    }
+
+    return {
+        action: "updated",
+        bookingId: existingBooking.id,
         ticketCount: plan.tickets.length,
         paymentAction,
         legacySource: plan.legacySource,
