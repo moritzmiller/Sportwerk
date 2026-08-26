@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { serializeScannerBooking } from "@/lib/scanner-privacy";
 import { verifyScannerToken } from "@/lib/scanner-links";
 import {
     buildRateLimitKey,
@@ -295,16 +296,15 @@ export async function POST(request, { params }) {
             });
 
             return {
-                booking: {
-                    id: booking.id,
-                    eventId: booking.eventId,
-                    ticketId: ticket.id,
-                    purchaserName: booking.purchaserName,
-                    purchaserEmail: booking.purchaserEmail,
-                    quantity: 1,
-                    checkedInAt: now.toISOString(),
-                    checkedInVia: source,
-                },
+                booking: serializeScannerBooking(
+                    {
+                        ...booking,
+                        ticketId: ticket.id,
+                        checkedInAt: now,
+                        checkedInVia: source,
+                    },
+                    { quantity: 1 }
+                ),
                 scan: scanPayload(scan),
             };
         }
@@ -441,7 +441,6 @@ export async function POST(request, { params }) {
                 id: true,
                 eventId: true,
                 purchaserName: true,
-                purchaserEmail: true,
                 quantity: true,
                 checkedInAt: true,
                 checkedInVia: true,
@@ -475,15 +474,7 @@ export async function POST(request, { params }) {
         });
 
         return {
-            booking: {
-                id: finalBooking.id,
-                eventId: finalBooking.eventId,
-                purchaserName: finalBooking.purchaserName,
-                purchaserEmail: finalBooking.purchaserEmail,
-                quantity: finalBooking.quantity,
-                checkedInAt: finalBooking.checkedInAt?.toISOString() ?? null,
-                checkedInVia: finalBooking.checkedInVia ?? source,
-            },
+            booking: serializeScannerBooking(finalBooking),
             scan: scanPayload(scan),
         };
     });

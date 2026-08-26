@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
-import { normalizeCustomerEmail } from "@/lib/crm";
+import { hasCrmCustomerAccess, normalizeCustomerEmail } from "@/lib/crm";
 import { prisma } from "@/lib/prisma";
 
 function jsonError(message, status = 400) {
@@ -20,6 +20,10 @@ export async function POST(request, { params }) {
 
     if (!email) return jsonError("Kunden-E-Mail fehlt.");
     if (!title) return jsonError("Ein Aufgabentitel ist erforderlich.");
+
+    if (!(await hasCrmCustomerAccess(prisma, user, email))) {
+        return jsonError("Kontakt nicht gefunden.", 404);
+    }
 
     const task = await prisma.customerTask.create({
         data: {

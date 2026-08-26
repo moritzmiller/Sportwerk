@@ -4,10 +4,9 @@ import { notFound, redirect } from "next/navigation";
 import CrmCustomerComposer from "@/components/CrmCustomerComposer";
 import CrmTaskToggle from "@/components/CrmTaskToggle";
 import { getCurrentUser } from "@/lib/auth";
-import { buildCustomerSummaries, normalizeCustomerEmail } from "@/lib/crm";
+import { buildCustomerSummaries, getCrmCustomerBookingWhere, normalizeCustomerEmail } from "@/lib/crm";
 import { formatMoney, getBookingStatusLabel, getBookingStatusTone } from "@/lib/bookings";
 import { prisma } from "@/lib/prisma";
-import { getBookingAccessWhere } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,13 +23,7 @@ export default async function CustomerDetailPage({ params }) {
 
     const [rawBookings, notes, tasks] = await Promise.all([
         prisma.booking.findMany({
-            where: {
-                ...getBookingAccessWhere(user),
-                purchaserEmail: {
-                    equals: email,
-                    mode: "insensitive",
-                },
-            },
+            where: getCrmCustomerBookingWhere(user, email),
             orderBy: { createdAt: "desc" },
             select: {
                 id: true,

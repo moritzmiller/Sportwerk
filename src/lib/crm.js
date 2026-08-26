@@ -1,3 +1,5 @@
+import { getBookingAccessWhere } from "./permissions.js";
+
 export function normalizeCustomerEmail(value) {
     return String(value ?? "").trim().toLowerCase();
 }
@@ -120,4 +122,30 @@ export function buildCustomerSummaries(bookings = [], notes = [], tasks = []) {
 export function findCustomerSummary(customers, email) {
     const normalized = normalizeCustomerEmail(email);
     return customers.find((customer) => customer.email === normalized) ?? null;
+}
+
+export function getCrmCustomerBookingWhere(user, email) {
+    const normalizedEmail = normalizeCustomerEmail(email);
+
+    return {
+        ...getBookingAccessWhere(user),
+        purchaserEmail: {
+            equals: normalizedEmail,
+            mode: "insensitive",
+        },
+    };
+}
+
+export async function hasCrmCustomerAccess(prismaClient, user, email) {
+    if (!user || user.role === "VISITOR") return false;
+
+    const normalizedEmail = normalizeCustomerEmail(email);
+    if (!normalizedEmail) return false;
+
+    const booking = await prismaClient.booking.findFirst({
+        where: getCrmCustomerBookingWhere(user, normalizedEmail),
+        select: { id: true },
+    });
+
+    return Boolean(booking);
 }
