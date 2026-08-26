@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { CATEGORY_MAP } from "@/lib/categories";
 import { normalizeEventStatus } from "@/lib/event-management";
+import { normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { canManageEvent, canManageOrganization } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { normalizeTicketTypes } from "@/lib/ticket-types";
@@ -67,6 +68,8 @@ export async function GET(_request, { params }) {
             location: event.location,
             city: event.city,
             category: event.category,
+            eventType: event.eventType,
+            eventOptions: event.eventOptions,
             status: event.status,
             allowedPaymentMethods: event.allowedPaymentMethods,
             startDate: event.startDate,
@@ -144,6 +147,12 @@ export async function PATCH(request, { params }) {
         throw error;
     }
     const nextStatus = normalizeEventStatus(body.status, event.status);
+    const nextEventType =
+        typeof body.eventType === "string" ? normalizeEventType(body.eventType) : event.eventType;
+    const nextEventOptions =
+        typeof body.eventOptions === "object"
+            ? normalizeEventOptions(nextEventType, body.eventOptions)
+            : normalizeEventOptions(nextEventType, event.eventOptions);
     const nextCapacity = normalizeCapacity(body.capacity);
     const nextPrice = Number(body.price);
     const nextOrganizationId =
@@ -320,6 +329,8 @@ export async function PATCH(request, { params }) {
                     ? normalizeSafeText(body.city, { maxLength: 100 }) || event.city
                     : event.city,
             category: CATEGORY_MAP[body.category] ? body.category : event.category,
+            eventType: nextEventType,
+            eventOptions: nextEventOptions,
             organizationId:
                 nextOrganizationId === "" ? null : nextOrganizationId ?? event.organizationId,
             venueId: nextVenueId === "" ? null : nextVenueId ?? event.venueId,
@@ -354,6 +365,7 @@ export async function PATCH(request, { params }) {
                 organizationId: updated.organizationId,
                 venueId: updated.venueId,
                 allowedPaymentMethods: updated.allowedPaymentMethods,
+                eventType: updated.eventType,
                 publishBlocked,
             },
         },

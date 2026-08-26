@@ -5,6 +5,7 @@ import { CATEGORIES } from "@/lib/categories";
 import ImageCropper from "@/components/ImageCropper";
 import PaymentMethodSelector from "@/components/PaymentMethodSelector";
 import TicketTypeEditor from "@/components/TicketTypeEditor";
+import { EVENT_TYPES, normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 
 const EMPTY = {
     title: "",
@@ -13,6 +14,8 @@ const EMPTY = {
     location: "",
     city: "Dresden",
     category: "SONSTIGES",
+    eventType: EVENT_TYPES.STANDARD,
+    eventOptions: normalizeEventOptions(EVENT_TYPES.STANDARD),
     startDate: "",
     capacity: "",
     status: "DRAFT",
@@ -53,6 +56,28 @@ export default function CreateEventForm({ organizations = [] }) {
 
             return { ...current, [name]: value };
         });
+    }
+
+    function updateEventType(eventType) {
+        const normalized = normalizeEventType(eventType);
+        setForm((current) => ({
+            ...current,
+            eventType: normalized,
+            eventOptions: normalizeEventOptions(normalized, current.eventOptions),
+        }));
+    }
+
+    function updateEventFeature(name, value) {
+        setForm((current) => ({
+            ...current,
+            eventOptions: normalizeEventOptions(current.eventType, {
+                ...current.eventOptions,
+                features: {
+                    ...(current.eventOptions?.features ?? {}),
+                    [name]: value,
+                },
+            }),
+        }));
     }
 
     async function handleSubmit(e) {
@@ -161,6 +186,39 @@ export default function CreateEventForm({ organizations = [] }) {
                     ))}
                 </select>
             </div>
+
+            <div className="field">
+                <label className="label" htmlFor="eventType">Event-Art</label>
+                <select
+                    id="eventType"
+                    name="eventType"
+                    className="select"
+                    value={form.eventType}
+                    onChange={(e) => updateEventType(e.target.value)}
+                >
+                    <option value={EVENT_TYPES.STANDARD}>Standard</option>
+                    <option value={EVENT_TYPES.ERICH}>Erich / Rennen</option>
+                </select>
+            </div>
+
+            <label className="checkline">
+                <input
+                    type="checkbox"
+                    checked={Boolean(form.eventOptions?.features?.seatingEnabled)}
+                    onChange={(e) => updateEventFeature("seatingEnabled", e.target.checked)}
+                />
+                <span>Sitzplan fuer dieses Event verwenden</span>
+            </label>
+
+            {form.eventType === EVENT_TYPES.ERICH ? (
+                <div className="trust-banner">
+                    <strong>Erich-Event</strong>
+                    <span>
+                        Rennnummer, Geburtsdatum, Verein, Altersklasse und Zielzeit werden im
+                        normalen Checkout abgefragt.
+                    </span>
+                </div>
+            ) : null}
 
             <div className="field">
                 <label className="label" htmlFor="location">Location</label>

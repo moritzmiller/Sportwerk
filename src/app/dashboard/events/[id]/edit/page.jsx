@@ -28,8 +28,15 @@ export default async function EditEventPage({ params }) {
             location: true,
             city: true,
             category: true,
+            eventType: true,
+            eventOptions: true,
+            status: true,
+            allowedPaymentMethods: true,
             startDate: true,
             price: true,
+            capacity: true,
+            soldTickets: true,
+            cancellationReason: true,
             ownerId: true,
             organizationId: true,
             venueId: true,
@@ -46,6 +53,13 @@ export default async function EditEventPage({ params }) {
                 },
             },
             owner: { select: { id: true, email: true, name: true } },
+            ticketTypes: {
+                orderBy: [
+                    { isDefault: "desc" },
+                    { sortOrder: "asc" },
+                    { createdAt: "asc" },
+                ],
+            },
         },
     });
 

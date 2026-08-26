@@ -7,6 +7,7 @@ import { CATEGORIES } from "@/lib/categories";
 import ImageCropper from "@/components/ImageCropper";
 import PaymentMethodSelector from "@/components/PaymentMethodSelector";
 import TicketTypeEditor from "@/components/TicketTypeEditor";
+import { EVENT_TYPES, normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { DEFAULT_ALLOWED_PAYMENT_METHODS } from "@/lib/payment-methods";
 
 const MAX_IMAGE_BYTES = 1500 * 1024;
@@ -20,6 +21,8 @@ function toFormValue(event) {
             location: "",
             city: "Dresden",
             category: "SONSTIGES",
+            eventType: EVENT_TYPES.STANDARD,
+            eventOptions: normalizeEventOptions(EVENT_TYPES.STANDARD),
             startDate: "",
             capacity: "",
             status: "PUBLISHED",
@@ -54,6 +57,8 @@ function toFormValue(event) {
         location: event.location ?? "",
         city: event.city ?? "Dresden",
         category: event.category ?? "SONSTIGES",
+        eventType: normalizeEventType(event.eventType),
+        eventOptions: normalizeEventOptions(event.eventType, event.eventOptions),
         startDate: localValue,
         capacity: event.capacity ? String(event.capacity) : "",
         status: event.status ?? "PUBLISHED",
@@ -106,6 +111,28 @@ export default function EventEditorForm({ event, organizations = [] }) {
 
     function updateField(name, value) {
         setForm((current) => ({ ...current, [name]: value }));
+    }
+
+    function updateEventType(eventType) {
+        const normalized = normalizeEventType(eventType);
+        setForm((current) => ({
+            ...current,
+            eventType: normalized,
+            eventOptions: normalizeEventOptions(normalized, current.eventOptions),
+        }));
+    }
+
+    function updateEventFeature(name, value) {
+        setForm((current) => ({
+            ...current,
+            eventOptions: normalizeEventOptions(current.eventType, {
+                ...current.eventOptions,
+                features: {
+                    ...(current.eventOptions?.features ?? {}),
+                    [name]: value,
+                },
+            }),
+        }));
     }
 
     async function save(nextStatus = form.status) {
@@ -296,6 +323,42 @@ export default function EventEditorForm({ event, organizations = [] }) {
                         ))}
                     </select>
                 </div>
+
+                <div className="field">
+                    <label className="label" htmlFor="event-type">
+                        Event-Art
+                    </label>
+                    <select
+                        id="event-type"
+                        className="select"
+                        value={form.eventType}
+                        onChange={(e) => updateEventType(e.target.value)}
+                    >
+                        <option value={EVENT_TYPES.STANDARD}>Standard</option>
+                        <option value={EVENT_TYPES.ERICH}>Erich / Rennen</option>
+                    </select>
+                </div>
+
+                <div className="field checkout-form__wide">
+                    <label className="checkline">
+                        <input
+                            type="checkbox"
+                            checked={Boolean(form.eventOptions?.features?.seatingEnabled)}
+                            onChange={(e) => updateEventFeature("seatingEnabled", e.target.checked)}
+                        />
+                        <span>Sitzplan fuer dieses Event verwenden</span>
+                    </label>
+                </div>
+
+                {form.eventType === EVENT_TYPES.ERICH ? (
+                    <div className="trust-banner checkout-form__wide">
+                        <strong>Erich-Event</strong>
+                        <span>
+                            Rennnummer, Geburtsdatum, Verein, Altersklasse und Zielzeit werden
+                            im normalen Checkout als Bestellangaben abgefragt.
+                        </span>
+                    </div>
+                ) : null}
 
                 <div className="field">
                     <label className="label" htmlFor="event-city">

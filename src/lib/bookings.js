@@ -82,6 +82,7 @@ export function serializeBooking(booking) {
         stripePaymentIntentId: booking.stripePaymentIntentId ?? null,
         stripeStatus: booking.stripeStatus ?? null,
         stripeCheckoutUrl: booking.providerPayload?.url ?? null,
+        registrationData: booking.registrationData ?? null,
         createdAt: toIsoString(booking.createdAt),
         updatedAt: toIsoString(booking.updatedAt),
         event: booking.event
