@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 
 import { sendTransactionalMail } from "../mail.js";
 import { normalizeSafeText } from "../security.js";
+import { createIndividualTicketCode } from "../tickets.js";
 import { writeErichAuditLog } from "./audit.js";
 import { buildDocumentIssueData, buildTicketCreateData } from "./fulfillment.js";
 import { canManageOwnErichRecord } from "./permissions.js";
@@ -79,6 +80,45 @@ function groupActiveEntriesByAthlete(entries = []) {
     }
 
     return [...grouped.values()];
+}
+
+function unifiedTicketWhereForRaceEntry(raceEntry) {
+    return {
+        eventId: raceEntry.eventId,
+        status: "VALID",
+        holderDetails: {
+            path: ["legacySource", "entryId"],
+            equals: raceEntry.id,
+        },
+    };
+}
+
+function adaptUnifiedTicket(ticket) {
+    if (!ticket?.id) return null;
+
+    return {
+        id: ticket.id,
+        ticketId: createIndividualTicketCode(ticket.id),
+        source: "UNIFIED",
+        status: ticket.status,
+        checkedInAt: ticket.checkedInAt ?? null,
+        documentIssues: [],
+    };
+}
+
+async function findUnifiedTicketForRaceEntry(store, raceEntry) {
+    if (!store?.ticket?.findFirst || !raceEntry?.id) return null;
+
+    const ticket = await store.ticket.findFirst({
+        where: unifiedTicketWhereForRaceEntry(raceEntry),
+        select: {
+            id: true,
+            status: true,
+            checkedInAt: true,
+        },
+    });
+
+    return adaptUnifiedTicket(ticket);
 }
 
 function accessWhere(user, batchId) {
@@ -276,6 +316,9 @@ export function buildErichAthleteTicketFilename({ event, athlete }) {
 }
 
 async function createOrReuseTicketForRaceEntry(store, { eventId, raceEntry, now }) {
+    const unifiedTicket = await findUnifiedTicketForRaceEntry(store, raceEntry);
+    if (unifiedTicket) return unifiedTicket;
+
     const existing = await store.erichTicket.findFirst({
         where: {
             raceEntryId: raceEntry.id,
