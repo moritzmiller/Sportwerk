@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
-import { buildUnifiedMigrationPlanFromErichBatch } from "../src/lib/erich/unified-migration.js";
+import {
+    applyUnifiedMigrationPlanFromErichBatch,
+    buildUnifiedMigrationPlanFromErichBatch,
+    ensureUnifiedEventForErichEvent,
+} from "../src/lib/erich/unified-migration.js";
 
 async function createScriptPrismaClient() {
     const [{ PrismaClient }, { PrismaPg }, pgModule, nextEnv, { getDatabaseUrl }] =
@@ -37,6 +41,8 @@ function readArgs(argv) {
         eventMap: new Map(),
         limit: 50,
         status: null,
+        apply: false,
+        ownerId: null,
         help: false,
     };
 
@@ -44,15 +50,20 @@ function readArgs(argv) {
         const value = argv[index];
         if (value === "--help" || value === "-h") {
             args.help = true;
+        } else if (value === "--apply") {
+            args.apply = true;
         } else if (value === "--event-map") {
             const mapping = argv[index + 1] ?? "";
             index += 1;
             const [legacyEventId, unifiedEventId] = mapping.split(":");
-            const numericEventId = Number(unifiedEventId);
-            if (!legacyEventId || !Number.isInteger(numericEventId)) {
-                throw new Error("--event-map expects <erichEventId>:<numericEventId>.");
+            const numericEventId = unifiedEventId === "auto" ? null : Number(unifiedEventId);
+            if (!legacyEventId || (unifiedEventId !== "auto" && !Number.isInteger(numericEventId))) {
+                throw new Error("--event-map expects <erichEventId>:<numericEventId> or <erichEventId>:auto.");
             }
             args.eventMap.set(legacyEventId, numericEventId);
+        } else if (value === "--owner-id") {
+            args.ownerId = String(argv[index + 1] ?? "").trim() || null;
+            index += 1;
         } else if (value === "--limit") {
             args.limit = Math.max(1, Math.min(500, Number(argv[index + 1]) || args.limit));
             index += 1;
@@ -69,12 +80,14 @@ function readArgs(argv) {
 
 function printUsage() {
     console.log(`Usage:
-  node scripts/erich-unified-migration-dry-run.mjs --event-map <erichEventId>:<eventId> [--event-map ...] [--status PAID] [--limit 50]
+  node scripts/erich-unified-migration-dry-run.mjs --event-map <erichEventId>:<eventId|auto> [--event-map ...] [--owner-id <userId>] [--status PAID] [--limit 50] [--apply]
 
 Examples:
   node scripts/erich-unified-migration-dry-run.mjs --event-map erich-2026:42 --status PAID
+  node scripts/erich-unified-migration-dry-run.mjs --event-map erich-2026:auto --owner-id user_123 --status PAID
+  node scripts/erich-unified-migration-dry-run.mjs --event-map erich-2026:42 --status PAID --apply
 
-This is a read-only dry run. It prints planned Booking, Payment and Ticket payloads but does not write to the database.`);
+Without --apply this is a read-only dry run. With --apply it writes unified Booking, Payment and Ticket records transactionally and skips batches that were already migrated. The :auto event map value creates or reuses a unified ERICH Event and requires --owner-id.`);
 }
 
 function summarizePlan(plan) {
@@ -121,6 +134,28 @@ async function main() {
 
     const { prisma, disconnect } = await createScriptPrismaClient();
     try {
+        const eventMappingResults = [];
+        for (const [legacyEventId, unifiedEventId] of args.eventMap) {
+            if (unifiedEventId !== null) continue;
+            if (!args.ownerId) {
+                throw new Error("--owner-id is required when an --event-map value is :auto.");
+            }
+
+            const erichEvent = await prisma.erichEvent.findUnique({
+                where: { id: legacyEventId },
+            });
+            if (!erichEvent) {
+                throw new Error(`Legacy ERICH event not found: ${legacyEventId}`);
+            }
+
+            const mapping = await ensureUnifiedEventForErichEvent(prisma, {
+                erichEvent,
+                ownerId: args.ownerId,
+            });
+            args.eventMap.set(legacyEventId, mapping.event.id);
+            eventMappingResults.push(mapping);
+        }
+
         const batches = await prisma.erichRegistrationBatch.findMany({
             where: {
                 eventId: { in: [...args.eventMap.keys()] },
@@ -154,12 +189,43 @@ async function main() {
             take: args.limit,
         });
 
-        const plans = batches.map((batch) =>
-            buildUnifiedMigrationPlanFromErichBatch({
+        const plans = batches.map((batch) => ({
+            batch,
+            plan: buildUnifiedMigrationPlanFromErichBatch({
                 batch,
                 eventId: args.eventMap.get(batch.eventId),
-            })
-        );
+            }),
+        }));
+
+        if (args.apply) {
+            const results = [];
+            for (const { batch } of plans) {
+                const result = await prisma.$transaction((tx) =>
+                    applyUnifiedMigrationPlanFromErichBatch(tx, {
+                        batch,
+                        eventId: args.eventMap.get(batch.eventId),
+                    })
+                );
+                results.push(result);
+            }
+
+            console.log(
+                JSON.stringify(
+                    {
+                        dryRun: false,
+                        applied: true,
+                        batchCount: batches.length,
+                        eventMap: Object.fromEntries(args.eventMap),
+                        eventMappings: eventMappingResults,
+                        status: args.status,
+                        results,
+                    },
+                    null,
+                    2
+                )
+            );
+            return;
+        }
 
         console.log(
             JSON.stringify(
@@ -167,8 +233,9 @@ async function main() {
                     dryRun: true,
                     batchCount: batches.length,
                     eventMap: Object.fromEntries(args.eventMap),
+                    eventMappings: eventMappingResults,
                     status: args.status,
-                    plans: plans.map(summarizePlan),
+                    plans: plans.map(({ plan }) => summarizePlan(plan)),
                 },
                 null,
                 2

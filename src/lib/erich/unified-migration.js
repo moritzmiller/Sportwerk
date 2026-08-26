@@ -1,4 +1,5 @@
-import { EVENT_TYPES } from "../event-options.js";
+import { EVENT_TYPES, normalizeEventOptions } from "../event-options.js";
+import { applyReservationChange } from "../reservations.js";
 import { buildRegistrationChargeSummary } from "./registration-batches.js";
 
 const BOOKING_STATUS_BY_ERICH_STATUS = Object.freeze({
@@ -37,6 +38,12 @@ const PAYMENT_PROVIDER_BY_ERICH_PROVIDER = Object.freeze({
     PAYPAL: "PAYPAL",
     STRIPE: "STRIPE",
     SIMULATED: "MANUAL",
+});
+
+const EVENT_STATUS_BY_ERICH_STATUS = Object.freeze({
+    ACTIVE: "PUBLISHED",
+    DRAFT: "DRAFT",
+    ARCHIVED: "CANCELLED",
 });
 
 export function centsToEuros(cents) {
@@ -101,6 +108,110 @@ export function buildUnifiedRegistrationData(batch) {
         }),
         raceEntries,
         teamEntries,
+    };
+}
+
+export function buildErichEventLookup(erichEventId) {
+    if (!erichEventId) throw new Error("erichEventId is required.");
+
+    return {
+        eventType: EVENT_TYPES.ERICH,
+        eventOptions: {
+            path: ["legacySource", "erichEventId"],
+            equals: erichEventId,
+        },
+    };
+}
+
+export function buildUnifiedEventOptionsFromErichEvent(erichEvent, rawOptions = {}) {
+    if (!erichEvent?.id) throw new Error("erichEvent is required.");
+
+    return normalizeEventOptions(EVENT_TYPES.ERICH, {
+        ...rawOptions,
+        features: {
+            ...(rawOptions?.features ?? {}),
+            raceRegistration: true,
+        },
+        legacySource: {
+            type: "ErichEvent",
+            erichEventId: erichEvent.id,
+            slug: erichEvent.slug ?? null,
+        },
+        raceSelectionMode: rawOptions?.raceSelectionMode ?? "ORDER_FORM",
+        ageRuleMode: rawOptions?.ageRuleMode ?? "ORDER_FORM",
+    });
+}
+
+export function buildUnifiedEventCreateDataFromErichEvent({
+    erichEvent,
+    ownerId,
+    now = new Date(),
+    eventOptions = {},
+} = {}) {
+    if (!erichEvent?.id) throw new Error("erichEvent is required.");
+    if (!ownerId) throw new Error("ownerId is required.");
+
+    return {
+        title: erichEvent.name ?? erichEvent.slug ?? "ERICH Veranstaltung",
+        description: "Migriert aus ERICH Veranstaltung.",
+        location: "ERICH",
+        city: "Dresden",
+        category: "SPORT",
+        eventType: EVENT_TYPES.ERICH,
+        eventOptions: buildUnifiedEventOptionsFromErichEvent(erichEvent, eventOptions),
+        status: EVENT_STATUS_BY_ERICH_STATUS[erichEvent.status] ?? "DRAFT",
+        startDate: erichEvent.startsAt ?? now,
+        price: 0,
+        capacity: null,
+        publishedAt: erichEvent.status === "ACTIVE" ? now : null,
+        ownerId,
+    };
+}
+
+export async function findUnifiedEventForErichEvent(tx, erichEventId, select = { id: true }) {
+    if (!tx?.event) throw new Error("A Prisma transaction/client with an event delegate is required.");
+
+    return tx.event.findFirst({
+        where: buildErichEventLookup(erichEventId),
+        select,
+    });
+}
+
+export async function ensureUnifiedEventForErichEvent(tx, {
+    erichEvent,
+    ownerId,
+    now = new Date(),
+    eventOptions = {},
+} = {}) {
+    if (!tx?.event) throw new Error("A Prisma transaction/client with an event delegate is required.");
+
+    const existing = await findUnifiedEventForErichEvent(tx, erichEvent?.id);
+    if (existing) {
+        return {
+            action: "reused",
+            event: existing,
+            legacySource: {
+                erichEventId: erichEvent.id,
+            },
+        };
+    }
+
+    const event = await tx.event.create({
+        data: buildUnifiedEventCreateDataFromErichEvent({
+            erichEvent,
+            ownerId,
+            now,
+            eventOptions,
+        }),
+        select: { id: true },
+    });
+
+    return {
+        action: "created",
+        event,
+        legacySource: {
+            erichEventId: erichEvent.id,
+        },
     };
 }
 
@@ -293,6 +404,100 @@ export function buildUnifiedMigrationPlanFromErichBatch({
             batchId: batch.id,
             erichEventId: batch.eventId,
         },
+    };
+}
+
+export function buildErichBatchBookingLookup(batchId) {
+    if (!batchId) throw new Error("batchId is required.");
+
+    return {
+        registrationData: {
+            path: ["legacySource", "batchId"],
+            equals: batchId,
+        },
+    };
+}
+
+export async function applyUnifiedMigrationPlanFromErichBatch(tx, {
+    batch,
+    eventId,
+    ticketType = null,
+    now = new Date(),
+} = {}) {
+    if (!tx?.booking || !tx?.ticket || !tx?.payment) {
+        throw new Error("A Prisma transaction/client with booking, ticket and payment delegates is required.");
+    }
+    if (!batch?.id) throw new Error("batch is required.");
+
+    const existingBooking = await tx.booking.findFirst({
+        where: buildErichBatchBookingLookup(batch.id),
+        select: { id: true },
+    });
+
+    if (existingBooking) {
+        return {
+            action: "skipped",
+            reason: "booking-exists",
+            bookingId: existingBooking.id,
+            legacySource: {
+                batchId: batch.id,
+                erichEventId: batch.eventId,
+            },
+        };
+    }
+
+    const bookingData = buildUnifiedBookingCreateDataFromErichBatch({
+        batch,
+        eventId,
+        ticketType,
+        now,
+    });
+    const booking = await tx.booking.create({ data: bookingData });
+
+    await applyReservationChange(tx, {
+        eventId: booking.eventId,
+        previousQuantity: 0,
+        nextQuantity: booking.quantity,
+        previousTicketTypeId: null,
+        nextTicketTypeId: booking.ticketTypeId || null,
+    });
+
+    const plan = buildUnifiedMigrationPlanFromErichBatch({
+        batch,
+        eventId,
+        bookingId: booking.id,
+        ticketType,
+        now,
+    });
+
+    if (plan.tickets.length > 0) {
+        await tx.ticket.createMany({
+            data: plan.tickets,
+            skipDuplicates: true,
+        });
+    }
+
+    let paymentAction = "none";
+    if (plan.payment) {
+        const existingPayment = await tx.payment.findUnique({
+            where: { idempotencyKey: plan.payment.idempotencyKey },
+            select: { id: true },
+        });
+
+        if (existingPayment) {
+            paymentAction = "skipped";
+        } else {
+            await tx.payment.create({ data: plan.payment });
+            paymentAction = "created";
+        }
+    }
+
+    return {
+        action: "created",
+        bookingId: booking.id,
+        ticketCount: plan.tickets.length,
+        paymentAction,
+        legacySource: plan.legacySource,
     };
 }
 

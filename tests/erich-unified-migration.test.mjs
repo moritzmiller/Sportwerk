@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    applyUnifiedMigrationPlanFromErichBatch,
+    buildErichEventLookup,
+    buildErichBatchBookingLookup,
+    buildUnifiedEventCreateDataFromErichEvent,
+    ensureUnifiedEventForErichEvent,
     buildUnifiedBookingCreateDataFromErichBatch,
     buildUnifiedMigrationPlanFromErichBatch,
     buildUnifiedPaymentCreateDataFromErichPayment,
@@ -88,6 +93,15 @@ const batch = {
     payments: [payment],
 };
 
+const erichEvent = {
+    id: "erich-event-1",
+    name: "ERICH 2026",
+    slug: "erich-2026",
+    status: "ACTIVE",
+    startsAt: new Date("2026-09-05T08:00:00.000Z"),
+    endsAt: new Date("2026-09-05T18:00:00.000Z"),
+};
+
 test("ERICH migration helpers map money and statuses to unified domain values", () => {
     assert.equal(centsToEuros(1234), 12.34);
     assert.equal(mapErichRegistrationStatus("PAID"), "PAID");
@@ -115,6 +129,59 @@ test("ERICH batch maps to a unified booking create payload", () => {
     assert.equal(booking.registrationData.eventType, "ERICH");
     assert.equal(booking.registrationData.raceEntries[0].raceNumber, 101);
     assert.equal(booking.registrationData.teamEntries[0].teamName, "Team Analytical");
+});
+
+test("ERICH event maps to a unified Event create payload with a legacy lookup marker", () => {
+    const lookup = buildErichEventLookup("erich-event-1");
+    assert.equal(lookup.eventType, "ERICH");
+    assert.deepEqual(lookup.eventOptions.path, ["legacySource", "erichEventId"]);
+    assert.equal(lookup.eventOptions.equals, "erich-event-1");
+
+    const event = buildUnifiedEventCreateDataFromErichEvent({
+        erichEvent,
+        ownerId: "owner-1",
+        now: new Date("2026-08-26T10:00:00.000Z"),
+    });
+
+    assert.equal(event.title, "ERICH 2026");
+    assert.equal(event.category, "SPORT");
+    assert.equal(event.eventType, "ERICH");
+    assert.equal(event.status, "PUBLISHED");
+    assert.equal(event.ownerId, "owner-1");
+    assert.equal(event.eventOptions.legacySource.erichEventId, "erich-event-1");
+    assert.equal(event.eventOptions.features.raceRegistration, true);
+});
+
+test("ERICH unified event helper creates missing mapped events and reuses existing ones", async () => {
+    const calls = [];
+    const tx = {
+        event: {
+            findFirst: async (args) => {
+                calls.push(["event.findFirst", args]);
+                return calls.filter(([name]) => name === "event.findFirst").length === 1
+                    ? null
+                    : { id: 42 };
+            },
+            create: async (args) => {
+                calls.push(["event.create", args]);
+                return { id: 42 };
+            },
+        },
+    };
+
+    const created = await ensureUnifiedEventForErichEvent(tx, {
+        erichEvent,
+        ownerId: "owner-1",
+    });
+    const reused = await ensureUnifiedEventForErichEvent(tx, {
+        erichEvent,
+        ownerId: "owner-1",
+    });
+
+    assert.equal(created.action, "created");
+    assert.equal(created.event.id, 42);
+    assert.equal(reused.action, "reused");
+    assert.equal(calls.filter(([name]) => name === "event.create").length, 1);
 });
 
 test("ERICH payment maps to a unified payment create payload", () => {
@@ -171,4 +238,89 @@ test("ERICH migration plan contains booking, latest payment and all tickets", ()
         plan.tickets.map((ticket) => ticket.ticketNumber),
         [1, 2]
     );
+});
+
+test("ERICH apply helper writes unified booking, reservation, tickets and payment once", async () => {
+    const calls = [];
+    const createdTickets = [];
+    const tx = {
+        booking: {
+            findFirst: async (args) => {
+                calls.push(["booking.findFirst", args]);
+                return null;
+            },
+            create: async ({ data }) => {
+                calls.push(["booking.create", data]);
+                return { ...data, id: "booking-1" };
+            },
+        },
+        event: {
+            findUnique: async (args) => {
+                calls.push(["event.findUnique", args]);
+                return { id: 42, capacity: 100 };
+            },
+            updateMany: async (args) => {
+                calls.push(["event.updateMany", args]);
+                return { count: 1 };
+            },
+        },
+        eventTicketType: {
+            findUnique: async () => null,
+            updateMany: async () => ({ count: 0 }),
+        },
+        ticket: {
+            createMany: async ({ data, skipDuplicates }) => {
+                calls.push(["ticket.createMany", { data, skipDuplicates }]);
+                createdTickets.push(...data);
+                return { count: data.length };
+            },
+        },
+        payment: {
+            findUnique: async (args) => {
+                calls.push(["payment.findUnique", args]);
+                return null;
+            },
+            create: async ({ data }) => {
+                calls.push(["payment.create", data]);
+                return { ...data, id: "payment-row-1" };
+            },
+        },
+    };
+
+    const result = await applyUnifiedMigrationPlanFromErichBatch(tx, {
+        batch,
+        eventId: 42,
+    });
+
+    assert.equal(result.action, "created");
+    assert.equal(result.bookingId, "booking-1");
+    assert.equal(result.ticketCount, 2);
+    assert.equal(result.paymentAction, "created");
+    assert.equal(createdTickets[0].bookingId, "booking-1");
+    assert.equal(createdTickets[1].holderName, "Team Analytical");
+    assert.ok(calls.some(([name]) => name === "event.updateMany"));
+    assert.ok(calls.some(([name]) => name === "payment.create"));
+});
+
+test("ERICH apply helper skips already migrated batches by legacy lookup", async () => {
+    const lookup = buildErichBatchBookingLookup("batch-1");
+    assert.deepEqual(lookup.registrationData.path, ["legacySource", "batchId"]);
+    assert.equal(lookup.registrationData.equals, "batch-1");
+
+    const tx = {
+        booking: {
+            findFirst: async () => ({ id: "existing-booking" }),
+        },
+        ticket: {},
+        payment: {},
+    };
+
+    const result = await applyUnifiedMigrationPlanFromErichBatch(tx, {
+        batch,
+        eventId: 42,
+    });
+
+    assert.equal(result.action, "skipped");
+    assert.equal(result.reason, "booking-exists");
+    assert.equal(result.bookingId, "existing-booking");
 });
