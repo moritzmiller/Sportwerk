@@ -6,11 +6,14 @@ import {
     buildDocumentIssueData,
     buildExportJobCreateData,
     buildReducedScannerTicket,
+    buildReducedUnifiedErichScannerTicket,
     buildTicketCreateData,
     createErichTicketId,
+    decideUnifiedErichTicketCheckIn,
     decideTicketCheckIn,
     scanErichTicket,
 } from "../src/lib/erich/fulfillment.js";
+import { createIndividualTicketCode } from "../src/lib/tickets.js";
 
 const scannerUser = {
     id: "scanner-1",
@@ -104,6 +107,38 @@ test("ERICH scanner ticket view is reduced and omits sensitive fields", () => {
     assert.equal(JSON.stringify(reduced).includes("priceCents"), false);
 });
 
+test("ERICH unified scanner ticket view is reduced and omits booking data", () => {
+    const reduced = buildReducedUnifiedErichScannerTicket({
+        id: "ticket-unified-1",
+        status: "VALID",
+        createdAt: new Date("2026-09-01T10:00:00.000Z"),
+        holderName: "Ada Lovelace",
+        holderDetails: {
+            legacySource: {
+                type: "ErichRaceEntry",
+                entryId: "entry-1",
+                erichEventId: "event-1",
+            },
+            athleteId: "athlete-1",
+            athleteName: "Ada Lovelace",
+            raceNumber: 101,
+            classLabel: "Open",
+            distanceLabel: "2000 m",
+            gender: "W",
+            invoiceEmail: "hidden@example.com",
+        },
+        booking: {
+            purchaserEmail: "hidden@example.com",
+        },
+    });
+
+    assert.match(reduced.ticketId, /^gkt1\.ticket-unified-1\./);
+    assert.equal(reduced.source, "UNIFIED");
+    assert.equal(reduced.raceEntry.id, "entry-1");
+    assert.equal(reduced.raceEntry.raceNumber, 101);
+    assert.equal(JSON.stringify(reduced).includes("hidden@example.com"), false);
+});
+
 test("ERICH check-in decisions reject duplicate or revoked tickets", () => {
     assert.deepEqual(decideTicketCheckIn({ ticket: ticket(), previousCheckIns: [] }), {
         accepted: true,
@@ -128,6 +163,56 @@ test("ERICH check-in decisions reject duplicate or revoked tickets", () => {
         status: "REJECTED",
         warning: "ticket-REVOKED",
     });
+});
+
+test("ERICH unified check-in decisions require paid valid unscanned tickets", () => {
+    assert.deepEqual(
+        decideUnifiedErichTicketCheckIn({
+            ticket: {
+                id: "ticket-unified-1",
+                status: "VALID",
+                checkedInAt: null,
+                booking: { status: "PAID" },
+            },
+        }),
+        {
+            accepted: true,
+            status: "ACCEPTED",
+            warning: null,
+        }
+    );
+
+    assert.deepEqual(
+        decideUnifiedErichTicketCheckIn({
+            ticket: {
+                id: "ticket-unified-1",
+                status: "CHECKED_IN",
+                checkedInAt: new Date("2026-09-01T12:00:00.000Z"),
+                booking: { status: "PAID" },
+            },
+        }),
+        {
+            accepted: false,
+            status: "DUPLICATE",
+            warning: "already-checked-in",
+        }
+    );
+
+    assert.deepEqual(
+        decideUnifiedErichTicketCheckIn({
+            ticket: {
+                id: "ticket-unified-1",
+                status: "VALID",
+                checkedInAt: null,
+                booking: { status: "PENDING" },
+            },
+        }),
+        {
+            accepted: false,
+            status: "REJECTED",
+            warning: "booking-PENDING",
+        }
+    );
 });
 
 test("ERICH check-in create data stores reduced ticket snapshot", () => {
@@ -224,6 +309,107 @@ test("ERICH scanner service writes check-in and audit with reduced response", as
         "erichTicket.findUnique",
         "erichCheckIn.create",
         "erichAuditLog.create",
+    ]);
+});
+
+test("ERICH scanner service prefers synced unified tickets before legacy tickets", async () => {
+    const calls = [];
+    const now = new Date("2026-09-01T11:00:00.000Z");
+    const unifiedCode = createIndividualTicketCode("ticket-unified-1");
+    const store = {
+        calls,
+        ticket: {
+            findUnique: async (args) => {
+                calls.push(["ticket.findUnique", args]);
+                return {
+                    id: "ticket-unified-1",
+                    eventId: 42,
+                    bookingId: "booking-1",
+                    holderName: "Ada Lovelace",
+                    holderDetails: {
+                        legacySource: {
+                            type: "ErichRaceEntry",
+                            entryId: "entry-1",
+                            erichEventId: "event-1",
+                        },
+                        athleteId: "athlete-1",
+                        athleteName: "Ada Lovelace",
+                        raceNumber: 101,
+                        classLabel: "Open",
+                    },
+                    status: "VALID",
+                    checkedInAt: null,
+                    createdAt: now,
+                    booking: {
+                        id: "booking-1",
+                        eventId: 42,
+                        purchaserName: "Ada Lovelace",
+                        status: "PAID",
+                        checkedInAt: null,
+                    },
+                    event: {
+                        id: 42,
+                        eventType: "ERICH",
+                        eventOptions: {
+                            legacySource: {
+                                erichEventId: "event-1",
+                            },
+                        },
+                    },
+                };
+            },
+            updateMany: async (args) => {
+                calls.push(["ticket.updateMany", args]);
+                return { count: 1 };
+            },
+            count: async (args) => {
+                calls.push(["ticket.count", args]);
+                return 0;
+            },
+        },
+        booking: {
+            updateMany: async (args) => {
+                calls.push(["booking.updateMany", args]);
+                return { count: 1 };
+            },
+        },
+        bookingScan: {
+            create: async (args) => {
+                calls.push(["bookingScan.create", args]);
+                return { id: "scan-1", ...args.data };
+            },
+        },
+        eventAuditLog: {
+            create: async (args) => {
+                calls.push(["eventAuditLog.create", args]);
+                return { id: "audit-1", ...args.data };
+            },
+        },
+        erichTicket: {
+            findUnique: async (args) => {
+                calls.push(["erichTicket.findUnique", args]);
+                return ticket();
+            },
+        },
+    };
+
+    const result = await scanErichTicket(store, {
+        user: scannerUser,
+        ticketId: unifiedCode,
+        now,
+    });
+
+    assert.equal(result.decision.status, "ACCEPTED");
+    assert.equal(result.checkIn.id, "scan-1");
+    assert.equal(result.ticket.source, "UNIFIED");
+    assert.equal(result.ticket.raceEntry.id, "entry-1");
+    assert.deepEqual(calls.map(([name]) => name), [
+        "ticket.findUnique",
+        "ticket.updateMany",
+        "bookingScan.create",
+        "ticket.count",
+        "booking.updateMany",
+        "eventAuditLog.create",
     ]);
 });
 

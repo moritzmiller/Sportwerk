@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import { createIndividualTicketCode, verifyTicketCode } from "../tickets.js";
 import { writeErichAuditLog } from "./audit.js";
 import { assertErichPermission, ERICH_PERMISSIONS } from "./permissions.js";
 
@@ -70,6 +71,45 @@ export function buildReducedScannerTicket(ticket) {
     };
 }
 
+export function buildReducedUnifiedErichScannerTicket(ticket) {
+    if (!ticket?.id) throw new Error("ticket is required.");
+
+    const details = ticket.holderDetails ?? {};
+
+    return {
+        ticketId: createIndividualTicketCode(ticket.id),
+        status: ticket.status === "CHECKED_IN" ? "ACTIVE" : ticket.status,
+        issuedAt: ticket.createdAt ?? null,
+        athlete: details.athleteName
+            ? {
+                  id: details.athleteId ?? null,
+                  firstName: details.athleteName,
+                  lastName: "",
+                  clubName: details.clubName ?? null,
+              }
+            : null,
+        raceEntry: details.legacySource?.type === "ErichRaceEntry"
+            ? {
+                  id: details.legacySource.entryId,
+                  raceNumber: details.raceNumber,
+                  status: ticket.status === "CHECKED_IN" ? "ACTIVE" : ticket.status,
+                  classLabel: details.classLabel ?? null,
+                  distanceLabel: details.distanceLabel ?? null,
+                  gender: details.gender ?? null,
+              }
+            : null,
+        teamEntry: details.legacySource?.type === "ErichTeamEntry"
+            ? {
+                  id: details.legacySource.entryId,
+                  raceNumber: details.raceNumber,
+                  teamName: details.teamName ?? ticket.holderName ?? null,
+                  status: ticket.status === "CHECKED_IN" ? "ACTIVE" : ticket.status,
+              }
+            : null,
+        source: "UNIFIED",
+    };
+}
+
 export function decideTicketCheckIn({ ticket, previousCheckIns = [] }) {
     if (!ticket?.id) throw new Error("ticket is required.");
 
@@ -89,6 +129,40 @@ export function decideTicketCheckIn({ ticket, previousCheckIns = [] }) {
             accepted: false,
             status: "DUPLICATE",
             warning: "already-checked-in",
+        };
+    }
+
+    return {
+        accepted: true,
+        status: "ACCEPTED",
+        warning: null,
+    };
+}
+
+export function decideUnifiedErichTicketCheckIn({ ticket }) {
+    if (!ticket?.id) throw new Error("ticket is required.");
+
+    if (ticket.booking?.status !== "PAID") {
+        return {
+            accepted: false,
+            status: "REJECTED",
+            warning: `booking-${ticket.booking?.status ?? "UNKNOWN"}`,
+        };
+    }
+
+    if (ticket.status === "CHECKED_IN" || ticket.checkedInAt) {
+        return {
+            accepted: false,
+            status: "DUPLICATE",
+            warning: "already-checked-in",
+        };
+    }
+
+    if (ticket.status !== "VALID") {
+        return {
+            accepted: false,
+            status: "REJECTED",
+            warning: `ticket-${ticket.status}`,
         };
     }
 
@@ -125,6 +199,163 @@ export function buildCheckInCreateData({
             accepted: decision.accepted,
             reducedTicket: buildReducedScannerTicket(ticket),
         },
+    };
+}
+
+function getLegacyErichEventIdFromUnifiedTicket(ticket) {
+    return ticket?.holderDetails?.legacySource?.erichEventId ??
+        ticket?.event?.eventOptions?.legacySource?.erichEventId ??
+        null;
+}
+
+async function findUnifiedErichTicketByCode(store, rawTicketId) {
+    if (!store?.ticket?.findUnique) return null;
+
+    const verified = verifyTicketCode(rawTicketId);
+    if (verified.format === "signed" && !verified.ok) {
+        throw structuredError({
+            code: "ERICH_TICKET_INVALID",
+            message: "ERICH ticket code is invalid.",
+            details: { format: verified.format },
+        });
+    }
+    if (!verified.ok || !verified.ticketId) return null;
+
+    const ticket = await store.ticket.findUnique({
+        where: { id: verified.ticketId },
+        include: {
+            booking: {
+                select: {
+                    id: true,
+                    eventId: true,
+                    purchaserName: true,
+                    status: true,
+                    checkedInAt: true,
+                },
+            },
+            event: {
+                select: {
+                    id: true,
+                    eventType: true,
+                    eventOptions: true,
+                },
+            },
+        },
+    });
+
+    if (!ticket || ticket.event?.eventType !== "ERICH") return null;
+    if (!getLegacyErichEventIdFromUnifiedTicket(ticket)) return null;
+    return ticket;
+}
+
+async function scanUnifiedErichTicket(store, {
+    user,
+    ticket,
+    rawTicketId,
+    source,
+    deviceId,
+    offlineId,
+    now,
+}) {
+    const legacyErichEventId = getLegacyErichEventIdFromUnifiedTicket(ticket);
+    assertErichPermission(user, ERICH_PERMISSIONS.SCAN_TICKETS, legacyErichEventId);
+
+    const decision = decideUnifiedErichTicketCheckIn({ ticket });
+
+    if (decision.accepted) {
+        const updated = await store.ticket.updateMany({
+            where: {
+                id: ticket.id,
+                status: "VALID",
+                checkedInAt: null,
+            },
+            data: {
+                status: "CHECKED_IN",
+                checkedInAt: now,
+                checkedInById: user?.id ?? null,
+                checkedInVia: source,
+            },
+        });
+
+        if (updated.count === 0) {
+            decision.accepted = false;
+            decision.status = "DUPLICATE";
+            decision.warning = "already-checked-in";
+        }
+    }
+
+    const checkIn = await store.bookingScan.create({
+        data: {
+            eventId: ticket.eventId,
+            bookingId: ticket.bookingId,
+            ticketId: ticket.id,
+            scannerId: user?.id ?? null,
+            scannerEmail: user?.email ?? null,
+            scannerName: user?.name ?? null,
+            source,
+            rawInput: rawTicketId,
+            status: decision.accepted ? "SCANNED" : decision.status,
+            warning: decision.warning,
+            details: {
+                accepted: decision.accepted,
+                source: "ERICH_UNIFIED",
+                legacyErichEventId,
+                deviceId,
+                offlineId,
+                reducedTicket: buildReducedUnifiedErichScannerTicket(ticket),
+            },
+        },
+    });
+
+    if (decision.accepted && ticket.bookingId && !ticket.booking?.checkedInAt) {
+        const remainingValidTickets = await store.ticket.count({
+            where: {
+                bookingId: ticket.bookingId,
+                status: "VALID",
+            },
+        });
+
+        if (remainingValidTickets === 0 && store.booking?.updateMany) {
+            await store.booking.updateMany({
+                where: {
+                    id: ticket.bookingId,
+                    checkedInAt: null,
+                },
+                data: {
+                    checkedInAt: now,
+                    checkedInById: user?.id ?? null,
+                    checkedInVia: source,
+                },
+            });
+        }
+    }
+
+    if (store.eventAuditLog?.create) {
+        await store.eventAuditLog.create({
+            data: {
+                eventId: ticket.eventId,
+                actorId: user?.id ?? null,
+                action: "erich.ticket.checked_in.unified",
+                details: {
+                    bookingId: ticket.bookingId,
+                    ticketId: ticket.id,
+                    scanId: checkIn.id,
+                    legacyErichEventId,
+                    via: source,
+                    status: decision.status,
+                },
+            },
+        });
+    }
+
+    return {
+        checkIn,
+        decision,
+        ticket: buildReducedUnifiedErichScannerTicket({
+            ...ticket,
+            status: decision.accepted ? "CHECKED_IN" : ticket.status,
+            checkedInAt: decision.accepted ? now : ticket.checkedInAt,
+        }),
     };
 }
 
@@ -173,6 +404,19 @@ export async function scanErichTicket(store, {
     now = new Date(),
 }) {
     if (!ticketId) throw new Error("ticketId is required.");
+
+    const unifiedTicket = await findUnifiedErichTicketByCode(store, ticketId);
+    if (unifiedTicket) {
+        return scanUnifiedErichTicket(store, {
+            user,
+            ticket: unifiedTicket,
+            rawTicketId: ticketId,
+            source,
+            deviceId,
+            offlineId,
+            now,
+        });
+    }
 
     const ticket = await store.erichTicket.findUnique({
         where: { ticketId },
