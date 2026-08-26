@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import EventScanner from "@/components/EventScanner";
 import { prisma } from "@/lib/prisma";
-import { serializeScannerTicket } from "@/lib/scanner-privacy";
+import { serializeScannerTicket, serializeScannerTicketRecord } from "@/lib/scanner-privacy";
 import { verifyScannerToken } from "@/lib/scanner-links";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,27 @@ export default async function ScannerPage({ params, searchParams }) {
                     checkedInAt: true,
                 },
             },
+            tickets: {
+                where: {
+                    booking: {
+                        status: "PAID",
+                    },
+                },
+                orderBy: [{ checkedInAt: "asc" }, { createdAt: "asc" }, { ticketNumber: "asc" }],
+                select: {
+                    id: true,
+                    bookingId: true,
+                    holderName: true,
+                    status: true,
+                    checkedInAt: true,
+                    ticketNumber: true,
+                    booking: {
+                        select: {
+                            purchaserName: true,
+                        },
+                    },
+                },
+            },
         },
     });
 
@@ -58,7 +79,11 @@ export default async function ScannerPage({ params, searchParams }) {
                 city: event.city,
                 startDate: event.startDate.toISOString(),
             }}
-            initialTickets={event.bookings.map(serializeScannerTicket)}
+            initialTickets={
+                event.tickets.length > 0
+                    ? event.tickets.map(serializeScannerTicketRecord)
+                    : event.bookings.map(serializeScannerTicket)
+            }
         />
     );
 }
