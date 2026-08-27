@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,7 +126,15 @@ def check_auth_env() -> None:
     redirect_uri = get_env_value("GOOGLE_OAUTH_REDIRECT_URI")
     if redirect_uri:
         ok(f"Google OAuth redirect URI: {redirect_uri}")
-        if "127.0.0.1" in redirect_uri or "localhost" in redirect_uri:
+        parsed_redirect_uri = urlparse(redirect_uri)
+        if not parsed_redirect_uri.scheme or not parsed_redirect_uri.netloc:
+            warn("GOOGLE_OAUTH_REDIRECT_URI is not an absolute URL.")
+        if parsed_redirect_uri.path != "/auth/google/callback":
+            warn(
+                "GOOGLE_OAUTH_REDIRECT_URI should end exactly with /auth/google/callback. "
+                f"Current path is {parsed_redirect_uri.path!r}."
+            )
+        if parsed_redirect_uri.hostname in {"127.0.0.1", "localhost", "::1"}:
             warn(
                 "Google OAuth redirect URI points to localhost. "
                 "This only works if the app is opened on the same localhost URL "

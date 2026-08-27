@@ -188,6 +188,21 @@ def is_loopback_host(hostname: str | None) -> bool:
     return normalized in {"localhost", "127.0.0.1", "::1"} or normalized.startswith("127.")
 
 
+def request_host_name() -> str:
+    return urlparse(f"//{request.host}").hostname or request.host.split(":", 1)[0]
+
+
+def is_same_redirect_target(first_url: str, second_url: str) -> bool:
+    first = urlparse(first_url)
+    second = urlparse(second_url)
+    return (
+        first.scheme == second.scheme
+        and first.hostname == second.hostname
+        and first.port == second.port
+        and first.path == second.path
+    )
+
+
 def derive_google_redirect_uri() -> str:
     return url_for("google_callback", _external=True)
 
@@ -198,12 +213,26 @@ def get_google_redirect_uri() -> str:
         return derive_google_redirect_uri()
 
     configured_host = urlparse(configured_redirect_uri).hostname
-    request_host = urlparse(f"//{request.host}").hostname or request.host.split(":", 1)[0]
+    request_host = request_host_name()
     request_is_public = not is_loopback_host(request_host)
+    derived_redirect_uri = derive_google_redirect_uri()
     if is_loopback_host(configured_host) and request_is_public:
-        derived_redirect_uri = derive_google_redirect_uri()
         app.logger.warning(
             "Ignoring loopback GOOGLE_OAUTH_REDIRECT_URI=%s for public request host=%s. "
+            "Using derived redirect URI=%s.",
+            configured_redirect_uri,
+            request.host,
+            derived_redirect_uri,
+        )
+        return derived_redirect_uri
+
+    if (
+        is_loopback_host(configured_host)
+        and is_loopback_host(request_host)
+        and not is_same_redirect_target(configured_redirect_uri, derived_redirect_uri)
+    ):
+        app.logger.warning(
+            "Ignoring mismatched loopback GOOGLE_OAUTH_REDIRECT_URI=%s for local request host=%s. "
             "Using derived redirect URI=%s.",
             configured_redirect_uri,
             request.host,
