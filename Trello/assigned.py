@@ -245,6 +245,16 @@ def build_source_marker(source_card: dict, board: dict, source_list: dict | None
     return "\n".join(parts)
 
 
+def build_copied_description(source_card: dict, board: dict, source_list: dict | None) -> str:
+    marker = build_source_marker(source_card, board, source_list)
+    max_description_length = 16000
+    source_description = source_card.get("desc") or ""
+    available_source_length = max_description_length - len(marker)
+    if available_source_length <= 0:
+        return marker[:max_description_length]
+    return f"{source_description[:available_source_length]}{marker}"
+
+
 def copy_card_to_list(source_card: dict, board: dict, source_list: dict | None, target_list_id: str) -> dict:
     new_card = trello_request(
         "POST",
@@ -256,11 +266,10 @@ def copy_card_to_list(source_card: dict, board: dict, source_list: dict | None, 
             "name": source_card.get("name") or "Unbenannte Karte",
         },
     )
-    source_description = source_card.get("desc") or ""
     trello_request(
         "PUT",
         f"/cards/{new_card['id']}",
-        json_body={"desc": f"{source_description}{build_source_marker(source_card, board, source_list)}"[:16000]},
+        json_body={"desc": build_copied_description(source_card, board, source_list)},
     )
     return new_card
 
