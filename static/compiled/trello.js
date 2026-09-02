@@ -13,6 +13,13 @@ const actions = [{
   tone: "blue",
   command: "Mehrere Boards analysieren und einzelne Aufgabenkarten erstellen",
   facts: ["Board-Liste", "Einzelkarten", "Zielliste"]
+}, {
+  id: "assigned",
+  title: "Meine Karten",
+  eyebrow: "Zuweisungen",
+  tone: "green",
+  command: "Dir zugewiesene Karten nach KW, Overdue und Quellboard einsortieren",
+  facts: ["Diese Woche", "over due", "Quellboard"]
 }];
 function ActionPanel({
   action,
@@ -26,7 +33,7 @@ function ActionPanel({
   }, React.createElement("div", {
     className: `tool-card__mark tool-card__mark--${action.tone}`,
     "aria-hidden": "true"
-  }, action.id === "mirror" ? "SP" : "KI"), React.createElement("span", {
+  }, action.id === "mirror" ? "SP" : action.id === "summary" ? "KI" : "ME"), React.createElement("span", {
     className: "status-pill"
   }, "Bereit")), React.createElement("div", null, React.createElement("p", {
     className: "tool-card__area"

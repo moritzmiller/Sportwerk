@@ -103,6 +103,11 @@ TRELLO_ACTIONS = {
         "label": "KI-Zusammenfassung",
         "status": "Zusammenfassung wird erstellt",
     },
+    "assigned": {
+        "script": "assigned.py",
+        "label": "Meine Karten kopieren",
+        "status": "Zugewiesene Karten werden kopiert",
+    },
 }
 
 _participation_module = None

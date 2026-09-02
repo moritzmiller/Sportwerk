@@ -4,6 +4,7 @@
 *.csv
 .idea/
 .dev-logs/
+dev-server-*.log
 __pycache__/
 build/
 dist/

@@ -63,6 +63,10 @@ SPORTWERK_ALLOWED_DOMAINS=
 SPORTWERK_ALLOWED_EMAILS=
 TRELLO_API_KEY=
 TRELLO_TOKEN=
+TRELLO_ASSIGNED_SOURCE_BOARD_IDS=
+TRELLO_ASSIGNED_TARGET_BOARD_ID=
+TRELLO_ASSIGNED_MEMBER_ID=me
+TRELLO_ASSIGNED_TIMEZONE=Europe/Berlin
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5-mini
 SPORTWERK_LAYOUT_CONFIG_PATH=
@@ -145,6 +149,7 @@ Dafuer muessen die Apache-Module `proxy`, `proxy_http`, `headers` und fuer HTTPS
 - `templates/`: Jinja-HTML fuer Dashboard, Login, Fehlerseite und Tools.
 - `static/`: CSS, JavaScript, React-Bundles, JSX-Quellen und Vendor-Dateien.
 - `Trello/`: Trello-Synchronisierung und KI-Zusammenfassung.
+- `Trello/assigned.py`: kopiert Karten aus konfigurierten Boards, die dem Trello-Token-Nutzer oder einer konfigurierten Member-ID zugewiesen sind, in eigene Ziellisten.
 - `Teilnahmebedingungen/`: DOCX-Erzeugung fuer Teilnahmebedingungen.
 - `scripts/check-sportwerk.py`: lokaler Readiness-Check.
 - `scripts/build-jsx.js`: kompiliert JSX-Dateien nach `static/compiled/`.
@@ -160,3 +165,15 @@ Readiness-Check:
 ```bash
 python scripts/check-sportwerk.py
 ```
+
+## Trello: Zugewiesene Karten kopieren
+
+Die Trello-Seite enthaelt die Aktion `Meine Karten`. Sie liest alle offenen Karten der konfigurierten Quellboards, filtert auf `TRELLO_ASSIGNED_MEMBER_ID` und kopiert nur diese Karten in das Zielboard.
+
+Standardmaessig ist `TRELLO_ASSIGNED_MEMBER_ID=me`; damit wird der Nutzer des Trello-Tokens verwendet. Die Einsortierung laeuft dynamisch anhand der aktuellen Kalenderwoche in `TRELLO_ASSIGNED_TIMEZONE`:
+
+- Karten mit offenem abgelaufenem Karten- oder Checklist-Due-Date landen in `over due`.
+- Karten mit offenem Karten- oder Checklist-Due-Date innerhalb der aktuellen KW landen in `Diese Woche`.
+- Alle anderen Karten landen in einer Liste mit dem Namen des Quellboards.
+
+Das Skript schreibt eine `Sportwerk-Source-Card-ID` in die kopierten Karten. Dadurch werden Karten bei spaeteren Laeufen nicht doppelt angelegt.

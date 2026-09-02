@@ -15,6 +15,14 @@ const actions = [
     command: "Mehrere Boards analysieren und einzelne Aufgabenkarten erstellen",
     facts: ["Board-Liste", "Einzelkarten", "Zielliste"],
   },
+  {
+    id: "assigned",
+    title: "Meine Karten",
+    eyebrow: "Zuweisungen",
+    tone: "green",
+    command: "Dir zugewiesene Karten nach KW, Overdue und Quellboard einsortieren",
+    facts: ["Diese Woche", "over due", "Quellboard"],
+  },
 ];
 
 function ActionPanel({ action, running, onStart }) {
@@ -22,7 +30,7 @@ function ActionPanel({ action, running, onStart }) {
     <article className="action-panel">
       <div className="action-panel__head">
         <div className={`tool-card__mark tool-card__mark--${action.tone}`} aria-hidden="true">
-          {action.id === "mirror" ? "SP" : "KI"}
+          {action.id === "mirror" ? "SP" : action.id === "summary" ? "KI" : "ME"}
         </div>
         <span className="status-pill">Bereit</span>
       </div>
