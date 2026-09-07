@@ -1320,6 +1320,45 @@ textarea:focus {
   gap: var(--space-6);
 }
 
+.saved-pressespiegel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: var(--space-5);
+  margin-bottom: var(--space-7);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+  padding: var(--space-6);
+}
+
+.saved-pressespiegel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.saved-pressespiegel__actions .button {
+  min-width: 96px;
+}
+
+.saved-pressespiegel__status {
+  grid-column: 1 / -1;
+  min-height: 20px;
+  margin: calc(var(--space-2) * -1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.saved-pressespiegel__status[data-tone="success"] {
+  color: var(--color-green);
+}
+
+.saved-pressespiegel__status[data-tone="danger"] {
+  color: var(--color-danger);
+}
+
 .section-item {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
@@ -1495,6 +1534,7 @@ textarea:focus {
 
   .form-grid,
   .section-item__head,
+  .saved-pressespiegel,
   .summary,
   .tool-grid,
   .action-grid,
@@ -1516,6 +1556,7 @@ textarea:focus {
   .dashboard-hero,
   .tool-card,
   .action-panel,
+  .saved-pressespiegel,
   .participation-form,
   .document-preview,
   .concept-panel,
@@ -1541,6 +1582,15 @@ textarea:focus {
   .dashboard-hero__action {
     justify-self: stretch;
     width: auto;
+  }
+
+  .saved-pressespiegel__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  }
+
+  .saved-pressespiegel__actions .button {
+    min-width: 0;
   }
 
   .action-panel p,

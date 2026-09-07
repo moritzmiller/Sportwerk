@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import importlib.util
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -52,6 +53,7 @@ UPLOAD_DIR = INSTANCE_DIR / "uploads"
 OUTPUT_DIR = INSTANCE_DIR / "outputs"
 PARTICIPATION_OUTPUT_DIR = INSTANCE_DIR / "teilnahmebedingungen"
 JOB_STATE_DIR = INSTANCE_DIR / "job-state"
+SAVED_PRESSESPIEGEL_PATH = INSTANCE_DIR / "pressespiegel_saved.json"
 ALLOWED_UPLOAD_KINDS = {"background", "cover", "logo", "font"}
 
 
@@ -88,6 +90,7 @@ app.config["PREFERRED_URL_SCHEME"] = (
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
+SAVED_PRESSESPIEGEL_LOCK = threading.Lock()
 TRELLO_JOBS: dict[str, dict[str, Any]] = {}
 TRELLO_JOBS_LOCK = threading.Lock()
 PARTICIPATION_JOBS: dict[str, dict[str, Any]] = {}
@@ -168,6 +171,125 @@ def load_job_state(kind: str, job_id: str) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def load_saved_pressespiegel_items() -> list[dict[str, Any]]:
+    if not SAVED_PRESSESPIEGEL_PATH.exists():
+        return []
+    try:
+        data = json.loads(SAVED_PRESSESPIEGEL_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    items = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def save_saved_pressespiegel_items(items: list[dict[str, Any]]) -> None:
+    SAVED_PRESSESPIEGEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = SAVED_PRESSESPIEGEL_PATH.with_suffix(".tmp")
+    temp_path.write_text(
+        json.dumps({"items": items}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temp_path.replace(SAVED_PRESSESPIEGEL_PATH)
+
+
+def saved_pressespiegel_url_count(item: dict[str, Any]) -> int:
+    section_count = sum(len(section.get("urls", [])) for section in item.get("sections", []))
+    return section_count + len(item.get("fallback_urls", []))
+
+
+def saved_pressespiegel_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item["id"],
+        "name": item["name"],
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "section_count": len(item.get("sections", [])),
+        "url_count": saved_pressespiegel_url_count(item),
+    }
+
+
+def parse_saved_url_lines(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return value.splitlines()
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    return []
+
+
+def parse_saved_sections(value: Any) -> list[tuple[str, list[str]]]:
+    if not isinstance(value, list):
+        return []
+    groups: list[tuple[str, list[str]]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        groups.append((str(item.get("heading") or ""), parse_saved_url_lines(item.get("urls"))))
+    return groups
+
+
+def parse_saved_layout(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+
+    allowed_fields = {
+        "layout_id",
+        "cover_style",
+        "title_text",
+        "font_family",
+        "background_kind",
+        "background_hex",
+        "background_image_path",
+        "cover_image_path",
+        "accent_hex",
+        "main_logo_path",
+    }
+    layout = {
+        key: str(raw_value).strip()
+        for key, raw_value in value.items()
+        if key in allowed_fields and raw_value is not None and str(raw_value).strip()
+    }
+    if "background_hex" in layout:
+        layout["background_hex"] = normalize_hex_color(layout["background_hex"])
+    if "accent_hex" in layout:
+        layout["accent_hex"] = normalize_hex_color(layout["accent_hex"], "#F28C28")
+    if layout.get("background_kind") not in {None, "color", "image"}:
+        layout.pop("background_kind", None)
+    if layout.get("cover_style") not in {None, "classic", "brand_band", "editorial", "image"}:
+        layout.pop("cover_style", None)
+    return layout
+
+
+def build_saved_pressespiegel_item(raw_payload: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    name = re.sub(r"\s+", " ", str(raw_payload.get("name") or "")).strip()
+    if not name:
+        raise ValueError("Bitte gib einen Namen für den Pressespiegel ein.")
+    if len(name) > 120:
+        raise ValueError("Der Name darf maximal 120 Zeichen lang sein.")
+
+    sections, section_errors = prepare_section_groups(parse_saved_sections(raw_payload.get("sections")))
+    fallback_urls, fallback_errors = prepare_urls(parse_saved_url_lines(raw_payload.get("fallback_urls")))
+    input_errors = section_errors + fallback_errors
+    if input_errors:
+        raise ValueError("Bitte korrigiere diese Eingaben: " + "; ".join(input_errors[:5]))
+    if not sections and not fallback_urls:
+        raise ValueError("Bitte füge mindestens eine gültige Artikel-URL ein.")
+
+    now = datetime.now().isoformat(timespec="seconds")
+    item_id = str((existing or {}).get("id") or raw_payload.get("id") or uuid.uuid4().hex)
+    item_id = secure_filename(item_id) or uuid.uuid4().hex
+    return {
+        "id": item_id,
+        "name": name,
+        "sections": [{"heading": section.heading, "urls": section.urls} for section in sections],
+        "fallback_urls": fallback_urls,
+        "layout": parse_saved_layout(raw_payload.get("layout")),
+        "created_at": (existing or {}).get("created_at") or now,
+        "updated_at": now,
+    }
 
 
 def get_secret_key() -> str:
@@ -262,7 +384,7 @@ def is_auth_configured() -> bool:
 
 
 def wants_json_response() -> bool:
-    return request.path.startswith(("/jobs", "/trello/jobs", "/teilnahmebedingungen/jobs")) or (
+    return request.path.startswith(("/jobs", "/pressespiegel/saved", "/trello/jobs", "/teilnahmebedingungen/jobs")) or (
         request.accept_mimetypes.best == "application/json"
         and request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
     )
@@ -778,13 +900,70 @@ def task_management_tool():
 def index():
     ensure_instance_dirs()
     _custom_fonts, layouts = load_layout_state()
+    with SAVED_PRESSESPIEGEL_LOCK:
+        saved_pressespiegel = load_saved_pressespiegel_items()
     return render_template(
         "index.html",
         layouts=layouts,
         layouts_json=layout_payload(layouts),
+        saved_pressespiegel_json=saved_pressespiegel,
         fonts=sorted(PDF_FONT_FAMILIES),
         default_layout=layouts[0],
     )
+
+
+@app.get("/pressespiegel/saved")
+def list_saved_pressespiegel():
+    ensure_instance_dirs()
+    with SAVED_PRESSESPIEGEL_LOCK:
+        items = load_saved_pressespiegel_items()
+    return jsonify({"items": [saved_pressespiegel_summary(item) for item in items]})
+
+
+@app.get("/pressespiegel/saved/<saved_id>")
+def get_saved_pressespiegel(saved_id: str):
+    safe_id = secure_filename(saved_id)
+    with SAVED_PRESSESPIEGEL_LOCK:
+        for item in load_saved_pressespiegel_items():
+            if item.get("id") == safe_id:
+                return jsonify({"item": item})
+    return jsonify({"error": "Gespeicherter Pressespiegel nicht gefunden."}), 404
+
+
+@app.post("/pressespiegel/saved")
+def save_pressespiegel():
+    ensure_instance_dirs()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Ungültige Speicherdaten."}), 400
+
+    requested_id = secure_filename(str(payload.get("id") or ""))
+    with SAVED_PRESSESPIEGEL_LOCK:
+        items = load_saved_pressespiegel_items()
+        existing = next((item for item in items if item.get("id") == requested_id), None)
+        try:
+            item = build_saved_pressespiegel_item(payload, existing)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        items = [candidate for candidate in items if candidate.get("id") != item["id"]]
+        items.append(item)
+        items.sort(key=lambda candidate: str(candidate.get("updated_at") or ""), reverse=True)
+        save_saved_pressespiegel_items(items)
+
+    return jsonify({"item": item, "summary": saved_pressespiegel_summary(item)})
+
+
+@app.delete("/pressespiegel/saved/<saved_id>")
+def delete_saved_pressespiegel(saved_id: str):
+    safe_id = secure_filename(saved_id)
+    with SAVED_PRESSESPIEGEL_LOCK:
+        items = load_saved_pressespiegel_items()
+        next_items = [item for item in items if item.get("id") != safe_id]
+        if len(next_items) == len(items):
+            return jsonify({"error": "Gespeicherter Pressespiegel nicht gefunden."}), 404
+        save_saved_pressespiegel_items(next_items)
+    return jsonify({"success": True})
 
 
 @app.post("/jobs")

@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block title %}Pressespiegel Generator{% endblock %}
 
@@ -24,6 +24,25 @@
               <h2 id="articles-title">Artikelgruppen</h2>
             </div>
             <button class="button button--secondary" type="button" id="add-section">Neue Überschrift hinzufügen</button>
+          </div>
+
+          <div class="saved-pressespiegel">
+            <label class="field">
+              <span>Gespeicherter Pressespiegel</span>
+              <select id="saved-pressespiegel-select">
+                <option value="">Neuer Pressespiegel</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Name</span>
+              <input id="saved-pressespiegel-name" type="text" placeholder="z. B. Wochenrückblick KW 36">
+            </label>
+            <div class="saved-pressespiegel__actions" aria-label="Pressespiegel speichern">
+              <button class="button button--secondary" type="button" id="load-pressespiegel">Laden</button>
+              <button class="button button--primary" type="button" id="save-pressespiegel">Speichern</button>
+              <button class="icon-button" type="button" id="delete-pressespiegel" aria-label="Gespeicherten Pressespiegel löschen">&times;</button>
+            </div>
+            <p id="saved-pressespiegel-status" class="saved-pressespiegel__status" aria-live="polite"></p>
           </div>
 
           <div id="sections" class="section-list"></div>
@@ -147,10 +166,10 @@
               <span>Quellenlogos</span>
               <label class="file-picker file-picker--directory">
                 <input name="source_logos" type="file" accept=".png" multiple webkitdirectory directory>
-                <span>Ordner auswÃ¤hlen</span>
-                <strong>Kein Ordner ausgewÃ¤hlt</strong>
+                <span>Ordner auswählen</span>
+                <strong>Kein Ordner ausgewählt</strong>
               </label>
-              <small>PNG-Dateien passend zur Quelle benennen, zum Beispiel saechsische.png, tag24.png oder lvz.png. Fehlende Logos werden gemeldet, der PDF-Export lÃ¤uft weiter.</small>
+              <small>PNG-Dateien passend zur Quelle benennen, zum Beispiel saechsische.png, tag24.png oder lvz.png. Fehlende Logos werden gemeldet, der PDF-Export läuft weiter.</small>
             </div>
 
             <label class="field field--full">
@@ -211,5 +230,6 @@
 
 {% block scripts %}
     <script id="layout-data" type="application/json">{{ layouts_json | tojson }}</script>
+    <script id="saved-pressespiegel-data" type="application/json">{{ saved_pressespiegel_json | tojson }}</script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}
