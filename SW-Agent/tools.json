@@ -2,7 +2,7 @@
   {
       "type": "function",
       "name": "trello_meeting",
-      "description": "Erstellt eine aktuelle Übersicht aller Sportwerk-Projekte aus Trello zur Vorbereitung des wöchentlichen Montagsmeetings. Nutze dieses Tool nur, wenn der Nutzer die Übersicht tatsächlich erstellen oder aktualisieren möchte.",
+      "description": "Erstellt eine aktuelle Übersicht aller Sportwerk-Projekte aus Trello zur Vorbereitung des wöchentlichen Montagsmeetings. Die geplante automatische Ausführung ist montags um 06:00 Uhr Europe/Berlin über scripts/run-trello-meeting.py. Nutze dieses Tool nur, wenn der Nutzer die Übersicht tatsächlich erstellen oder aktualisieren möchte.",
       "parameters": {
           "type": "object",
           "properties": {},

@@ -177,3 +177,23 @@ Standardmaessig ist `TRELLO_ASSIGNED_MEMBER_ID=me`; damit wird der Nutzer des Tr
 - Alle anderen Karten landen in einer Liste mit dem Namen des Quellboards.
 
 Das Skript schreibt eine `Sportwerk-Source-Card-ID` in die kopierten Karten. Dadurch werden Karten bei spaeteren Laeufen nicht doppelt angelegt.
+
+## Trello: Montagsmeeting automatisch vorbereiten
+
+Das Trello-Meeting-Tool kann ohne interaktiven SW-Agent ueber den Scheduled-Runner gestartet werden:
+
+```bash
+python scripts/run-trello-meeting.py
+```
+
+Vor einer Cron- oder Timer-Einrichtung laesst sich die Konfiguration pruefen, ohne Trello zu veraendern:
+
+```bash
+python scripts/run-trello-meeting.py --check-config
+```
+
+Fuer die automatische Ausfuehrung jeden Montag um 06:00 Uhr muss der Server in `Europe/Berlin` laufen oder der Timer entsprechend diese Zeitzone verwenden. Ein Cron-Eintrag auf dem Produktionsserver sieht so aus:
+
+```cron
+0 6 * * 1 cd /var/www/sportwerk && /var/www/sportwerk/.venv/bin/python scripts/run-trello-meeting.py >> /var/log/sportwerk-trello-meeting.log 2>&1
+```
