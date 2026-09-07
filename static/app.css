@@ -74,9 +74,7 @@ body.auth-page {
   display: grid;
   place-items: center;
   padding: var(--space-10);
-  background:
-    linear-gradient(135deg, rgba(233, 120, 33, 0.13), rgba(37, 99, 235, 0.09)),
-    var(--color-page);
+  background: #f8fafc;
 }
 
 a {
@@ -99,60 +97,72 @@ textarea {
 }
 
 .auth-shell {
-  width: min(460px, 100%);
+  width: min(408px, 100%);
 }
 
 .auth-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  margin: 0 0 var(--space-6);
+  justify-content: center;
+  gap: var(--space-3);
+  margin: 0;
   color: var(--color-ink);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-heavy);
 }
 
 .auth-brand__mark {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   border-radius: var(--radius-md);
-  background: var(--color-accent);
+  background: var(--color-dark);
   color: var(--color-surface);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0;
 }
 
 .auth-card {
   display: grid;
-  gap: var(--space-8);
+  gap: var(--space-7);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
-  padding: var(--space-12);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  padding: var(--space-12) var(--space-10);
+  text-align: center;
+}
+
+.auth-card__header {
+  display: grid;
+  gap: var(--space-6);
 }
 
 .auth-card h1 {
   margin: 0;
-  font-size: var(--font-size-3xl);
+  font-size: var(--font-size-2xl);
   line-height: var(--line-height-tight);
   letter-spacing: 0;
 }
 
 .auth-card__text {
-  margin: var(--space-4) 0 0;
+  max-width: 31ch;
+  margin: calc(var(--space-3) * -1) auto 0;
   color: var(--color-muted);
+  font-size: var(--font-size-sm);
 }
 
 .auth-message {
   margin: 0;
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--color-surface-soft);
   padding: var(--space-5);
   color: var(--color-ink-soft);
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-strong);
+  font-weight: 600;
+  text-align: left;
 }
 
 .auth-message--danger {
@@ -162,29 +172,52 @@ textarea {
 }
 
 .google-login-button {
-  min-height: 48px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-4);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-ink);
-  box-shadow: var(--shadow-card);
-  font-weight: var(--font-weight-strong);
+  gap: var(--space-5);
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #3c4043;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 600;
   text-decoration: none;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
 }
 
-.google-login-button span {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--color-line);
-  border-radius: 50%;
-  color: var(--color-blue);
-  font-weight: var(--font-weight-heavy);
+.google-login-button:hover {
+  border-color: #c6c8cc;
+  background: #f8fafd;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.16);
+}
+
+.google-login-button:focus-visible {
+  outline: 3px solid rgba(26, 115, 232, 0.22);
+  outline-offset: 3px;
+}
+
+.google-login-button__icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.google-login-button__icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.auth-card__meta {
+  margin: calc(var(--space-2) * -1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
 }
 
 .session-bar {
