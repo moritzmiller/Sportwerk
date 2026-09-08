@@ -24,6 +24,7 @@ import {
     isManualPaymentMethod,
     isPaymentMethodAllowed,
     normalizePaymentMethod,
+    requiresBillingAddressForCheckout,
 } from "@/lib/payment-methods";
 import { canReserveSeats, getReservationDelta } from "@/lib/capacity";
 import { normalizeRegistrationAnswers } from "@/lib/event-options";
@@ -240,7 +241,10 @@ export async function POST(request) {
         return jsonError("Für dieses Event sind nicht mehr genügend Plätze frei.", 400);
     }
 
-    if (!billingName || !billingStreet || !billingPostalCode || !billingCity) {
+    if (
+        requiresBillingAddressForCheckout(paymentMethod, totals.totalAmount) &&
+        (!billingName || !billingStreet || !billingPostalCode || !billingCity)
+    ) {
         return jsonError("Bitte die Rechnungsadresse vollständig ausfüllen.");
     }
 

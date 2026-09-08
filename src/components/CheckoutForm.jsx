@@ -7,6 +7,7 @@ import { formatEventPrice } from "@/lib/events";
 import {
     getPaymentMethodOptions,
     normalizeAllowedPaymentMethods,
+    requiresBillingAddressForCheckout,
 } from "@/lib/payment-methods";
 import { createFallbackTicketType } from "@/lib/ticket-types";
 
@@ -71,8 +72,12 @@ export default function CheckoutForm({ event, initialCustomer }) {
     );
     const normalizedQuantity = Math.min(quantity, maxQuantity);
     const totals = calculateBookingTotals(selectedTicketType?.price ?? event.price, normalizedQuantity);
-    const paymentMethods = getPaymentMethodOptions(allowedPaymentMethods, totals.totalAmount);
     const bookingQuestions = getEventBookingQuestions(event);
+    const hasPaymentDue = totals.totalAmount > 0;
+    const paymentMethods = getPaymentMethodOptions(allowedPaymentMethods, totals.discountedSubtotal, {
+        quantity: normalizedQuantity,
+    });
+    const billingAddressRequired = requiresBillingAddressForCheckout(form.paymentMethod, totals.totalAmount);
 
     function updateField(name, value) {
         setForm((current) => ({
@@ -171,7 +176,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
             <section className="card stack">
                 <div className="section-title-row">
                     <h2>Deine Daten</h2>
-                    <span className="text-muted">Sichere Buchung ohne GateKeeper-Gebühr</span>
+                    <span className="text-muted">Sichere Buchung mit transparenter Gebühr</span>
                 </div>
 
                 <div className="grid checkout-form__grid">
@@ -343,11 +348,12 @@ export default function CheckoutForm({ event, initialCustomer }) {
                 </div>
             </section>
 
-            <section className="card stack">
+            {billingAddressRequired ? (
+                <section className="card stack">
                 <div className="section-title-row">
                     <h2>Rechnungsadresse</h2>
                     <span className="text-muted">
-                        Wird mit der Bestellung gespeichert
+                        Für Rechnung und Banküberweisung erforderlich
                     </span>
                 </div>
 
@@ -362,7 +368,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                             value={form.billingName}
                             onChange={(e) => updateField("billingName", e.target.value)}
                             placeholder="Rechnungsempfänger"
-                            required
+                            required={billingAddressRequired}
                         />
                     </div>
 
@@ -378,7 +384,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                                 updateField("billingStreet", e.target.value)
                             }
                             placeholder="Musterstraße 12"
-                            required
+                            required={billingAddressRequired}
                         />
                     </div>
 
@@ -394,7 +400,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                                 updateField("billingPostalCode", e.target.value)
                             }
                             placeholder="01067"
-                            required
+                            required={billingAddressRequired}
                         />
                     </div>
 
@@ -408,7 +414,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                             value={form.billingCity}
                             onChange={(e) => updateField("billingCity", e.target.value)}
                             placeholder="Dresden"
-                            required
+                            required={billingAddressRequired}
                         />
                     </div>
 
@@ -425,7 +431,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                             }
                             placeholder="DE"
                             maxLength={2}
-                            required
+                            required={billingAddressRequired}
                         />
                     </div>
 
@@ -444,48 +450,45 @@ export default function CheckoutForm({ event, initialCustomer }) {
                         />
                     </div>
                 </div>
-            </section>
+                </section>
+            ) : null}
 
-            <section className="card stack">
-                <div className="section-title-row">
-                    <h2>Zahlungsmethode</h2>
-                    <span className="text-muted">
-                        Wird im Profil und in der Bestellung gespeichert
-                    </span>
-                </div>
+            {hasPaymentDue ? (
+                <section className="card stack">
+                    <div className="section-title-row">
+                        <h2>Zahlungsmethode</h2>
+                        <span className="text-muted">
+                            Online sofort, manuell mit Zahlungsreferenz
+                        </span>
+                    </div>
 
-                <p className="text-muted">
-                    Online-Zahlungen werden direkt verarbeitet. Manuelle
-                    Zahlungsmethoden bleiben als offene Zahlung mit Referenz
-                    gespeichert.
-                </p>
-
-                <div className="payment-grid">
-                    {paymentMethods.map((method) => (
-                        <label
-                            key={method.value}
-                            className={`payment-option ${
-                                form.paymentMethod === method.value ? "is-active" : ""
-                            }`}
-                        >
-                            <input
-                                type="radio"
-                                name="paymentMethod"
-                                value={method.value}
-                                checked={form.paymentMethod === method.value}
-                                onChange={() => updateField("paymentMethod", method.value)}
-                            />
-                            <span>
-                                <strong>{method.label}</strong>
-                                <small>{method.description}</small>
-                                <small>
-                                    GateKeeper-Gebühr: {formatMoney(method.fee.gatekeeperFee)}
-                                </small>
-                            </span>
-                        </label>
-                    ))}
-                </div>
-            </section>
+                    <div className="payment-grid">
+                        {paymentMethods.map((method) => (
+                            <label
+                                key={method.value}
+                                className={`payment-option ${
+                                    form.paymentMethod === method.value ? "is-active" : ""
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="paymentMethod"
+                                    value={method.value}
+                                    checked={form.paymentMethod === method.value}
+                                    onChange={() => updateField("paymentMethod", method.value)}
+                                />
+                                <span>
+                                    <strong>{method.label}</strong>
+                                    <small>{method.description}</small>
+                                    <small>
+                                        GateKeeper-Gebühr: {formatMoney(method.fee.gatekeeperFee)}
+                                    </small>
+                                </span>
+                            </label>
+                        ))}
+                    </div>
+                </section>
+            ) : null}
 
             <section className="card stack">
                 <div className="section-title-row">
@@ -600,8 +603,8 @@ export default function CheckoutForm({ event, initialCustomer }) {
                         <strong>{normalizedQuantity}</strong>
                     </div>
                     <div>
-                        <span className="label">Gesamt</span>
-                        <strong>{formatMoney(totals.totalAmount)}</strong>
+                        <span className="label">Zwischensumme</span>
+                        <strong>{formatMoney(totals.discountedSubtotal)}</strong>
                     </div>
                     {form.promoCode && (
                         <div>
@@ -612,6 +615,10 @@ export default function CheckoutForm({ event, initialCustomer }) {
                     <div>
                         <span className="label">GateKeeper-Gebühr</span>
                         <strong>{formatMoney(totals.serviceFee)}</strong>
+                    </div>
+                    <div>
+                        <span className="label">Gesamt</span>
+                        <strong>{formatMoney(totals.totalAmount)}</strong>
                     </div>
                 </div>
             </div>

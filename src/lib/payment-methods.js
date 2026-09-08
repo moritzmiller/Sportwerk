@@ -62,6 +62,10 @@ export function isOnlinePaymentMethod(method) {
     return method === "PAYPAL" || method === "STRIPE" || method === "MOLLIE_PAY_BY_BANK";
 }
 
+export function requiresBillingAddressForCheckout(method, amount = 0) {
+    return roundMoney(amount) > 0 && isManualPaymentMethod(method);
+}
+
 export function getPaymentMethodLabel(method) {
     return PAYMENT_METHOD_LABELS[method] ?? method ?? "n/a";
 }
@@ -70,12 +74,13 @@ export function getPaymentMethodDescription(method) {
     return PAYMENT_METHOD_DESCRIPTIONS[method] ?? "";
 }
 
-export function getPaymentMethodFeeEstimate(method, amount) {
+export function getPaymentMethodFeeEstimate(method, amount, quantity = 1) {
     const totalAmount = roundMoney(amount);
+    const normalizedQuantity = Math.max(1, Math.min(10, Number(quantity) || 1));
     const rule = PROVIDER_FEE_RULES[method] ?? PROVIDER_FEE_RULES.STRIPE;
     const providerFee = totalAmount > 0 ? roundMoney(totalAmount * (rule.percent / 100) + rule.fixed) : 0;
 
-    const gatekeeperFee = calculateGatekeeperFee(totalAmount, 1);
+    const gatekeeperFee = calculateGatekeeperFee(totalAmount, normalizedQuantity);
 
     return {
         method,
@@ -90,12 +95,12 @@ export function getPaymentMethodFeeEstimate(method, amount) {
     };
 }
 
-export function getPaymentMethodOptions(methods = DEFAULT_ALLOWED_PAYMENT_METHODS, amount = 0) {
+export function getPaymentMethodOptions(methods = DEFAULT_ALLOWED_PAYMENT_METHODS, amount = 0, { quantity = 1 } = {}) {
     return normalizeAllowedPaymentMethods(methods).map((method) => ({
         value: method,
         label: getPaymentMethodLabel(method),
         description: getPaymentMethodDescription(method),
-        fee: getPaymentMethodFeeEstimate(method, amount),
+        fee: getPaymentMethodFeeEstimate(method, amount, quantity),
     }));
 }
 
