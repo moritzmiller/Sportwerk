@@ -6,32 +6,32 @@ import { getOptionalCurrentUser } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-    title: "GateKeeper - Event Operations fuer Veranstalter",
+    title: "GateKeeper - Event Operations für Veranstalter",
     description:
-        "GateKeeper ist die B2B-Plattform fuer Ticketing, Einlass, Zahlungen und Veranstaltungssteuerung.",
+        "GateKeeper ist die B2B-Plattform für Ticketing, Einlass, Zahlungen und Veranstaltungssteuerung.",
 };
 
-const operatingMetrics = [
-    { label: "Live Events", value: "24" },
-    { label: "Check-ins heute", value: "3.842" },
-    { label: "Auslastung", value: "91%" },
+const commandAreas = [
+    { label: "Planung", value: "Events" },
+    { label: "Verkauf", value: "Tickets" },
+    { label: "Einlass", value: "Check-in" },
 ];
 
 const platformModules = [
     {
         eyebrow: "Planung",
         title: "Veranstaltungen strukturiert aufsetzen",
-        text: "Lege Events, Ticketkontingente, Sitzplaene, Veranstaltungsorte und Teams in einem sauberen Arbeitsbereich an.",
+        text: "Lege Events, Ticketkontingente, Sitzpläne, Veranstaltungsorte und Teams in einem sauberen Arbeitsbereich an.",
     },
     {
         eyebrow: "Verkauf",
         title: "Tickets und Zahlungen kontrolliert abwickeln",
-        text: "Behalte Bestellungen, Zahlungsstatus, Rueckerstattungen und manuelle Zahlungswege zentral im Blick.",
+        text: "Behalte Bestellungen, Zahlungsstatus, Rückerstattungen, Promo-Codes und manuelle Zahlungswege zentral im Blick.",
     },
     {
         eyebrow: "Einlass",
-        title: "Check-in fuer schnelle Abendablaeufe",
-        text: "Scanner-Links, Ticketpruefung und Live-Statistiken helfen deinem Team, Gaeste ohne Reibung einzulassen.",
+        title: "Check-in für schnelle Abläufe am Veranstaltungstag",
+        text: "Scanner-Links, Ticketprüfung und Check-in-Übersichten helfen deinem Team, Gäste ohne Reibung einzulassen.",
     },
     {
         eyebrow: "Auswertung",
@@ -41,9 +41,9 @@ const platformModules = [
 ];
 
 const proofPoints = [
-    "Dashboard als zentrale Steuerzentrale fuer Veranstalter",
-    "Rollen, Organisationen und Veranstaltungsorte fuer B2B-Teams",
-    "Operative Workflows fuer Buchungen, Check-in und Reporting",
+    "Dashboard als zentrale Steuerzentrale für Veranstalter",
+    "Rollen, Organisationen und Veranstaltungsorte für B2B-Teams",
+    "Workflows für Buchungen, Zahlungen, Check-in und Reporting",
 ];
 
 const workflowSteps = [
@@ -66,15 +66,15 @@ export default async function HomePage() {
                 <div className="b2b-hero__image" aria-hidden="true" />
                 <div className="container b2b-hero__inner">
                     <div className="b2b-hero__copy">
-                        <span className="b2b-kicker">GateKeeper fuer Veranstalter</span>
-                        <h1>Die Betriebszentrale fuer professionelle Events.</h1>
+                        <span className="b2b-kicker">GateKeeper für Veranstalter</span>
+                        <h1>Die Betriebszentrale für professionelle Events.</h1>
                         <p>
                             Verkaufe Tickets, steuere Einlass, verwalte Veranstaltungen und halte dein Team auf einem
                             gemeinsamen Stand - vom ersten Setup bis zum letzten Check-in.
                         </p>
                         <div className="b2b-hero__actions" aria-label="GateKeeper starten">
                             <Link href="/auth" className="btn btn-primary btn-lg">
-                                Anmelden und Dashboard oeffnen
+                                Anmelden und Dashboard öffnen
                             </Link>
                             <Link href="#plattform" className="btn btn-ghost btn-lg">
                                 Plattform ansehen
@@ -85,13 +85,13 @@ export default async function HomePage() {
                     <div className="b2b-command-panel" aria-label="Dashboard Vorschau">
                         <div className="b2b-command-panel__header">
                             <span>Event Operations</span>
-                            <strong>Heute live</strong>
+                            <strong>Arbeitsbereiche</strong>
                         </div>
                         <div className="b2b-command-panel__metrics">
-                            {operatingMetrics.map((metric) => (
-                                <div key={metric.label}>
-                                    <strong>{metric.value}</strong>
-                                    <span>{metric.label}</span>
+                            {commandAreas.map((area) => (
+                                <div key={area.label}>
+                                    <strong>{area.value}</strong>
+                                    <span>{area.label}</span>
                                 </div>
                             ))}
                         </div>
@@ -141,8 +141,8 @@ export default async function HomePage() {
                         <h2>Angemeldete Nutzer landen direkt dort, wo Arbeit passiert.</h2>
                     </div>
                     <p>
-                        Die Mainpage ist fuer Kundenakquise da. Sobald ein Nutzer angemeldet ist, wird GateKeeper zur
-                        Arbeitsoberflaeche fuer Veranstaltungen, Bestellungen, Check-in, Organisationen und Auswertung.
+                        Die Startseite ist für Kundenakquise da. Sobald ein Nutzer angemeldet ist, wird GateKeeper zur
+                        Arbeitsoberfläche für Veranstaltungen, Bestellungen, Check-in, Organisationen und Auswertung.
                     </p>
                     <Link href="/auth" className="btn btn-primary">
                         Zum Login

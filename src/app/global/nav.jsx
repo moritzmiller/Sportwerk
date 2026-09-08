@@ -53,7 +53,7 @@ export default async function Nav() {
                             </li>
                             <li>
                                 <Link href="/auth" className="btn btn-primary">
-                                    Dashboard oeffnen
+                                    Dashboard öffnen
                                 </Link>
                             </li>
                         </>
