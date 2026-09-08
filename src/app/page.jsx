@@ -67,7 +67,10 @@ export default async function HomePage() {
                 <div className="container b2b-hero__inner">
                     <div className="b2b-hero__copy">
                         <span className="b2b-kicker">GateKeeper für Veranstalter</span>
-                        <h1>Die Betriebszentrale für professionelle Events.</h1>
+                        <h1>
+                            <span>Event-Zentrale</span>
+                            <span>für Veranstalter.</span>
+                        </h1>
                         <p>
                             Verkaufe Tickets, steuere Einlass, verwalte Veranstaltungen und halte dein Team auf einem
                             gemeinsamen Stand - vom ersten Setup bis zum letzten Check-in.

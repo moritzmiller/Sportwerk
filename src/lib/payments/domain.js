@@ -34,6 +34,11 @@ export const PAYMENT_LEDGER_ENTRY_TYPES = Object.freeze([
     "ADJUSTMENT",
 ]);
 
+export const CHECKOUT_REFERENCE_TYPES = Object.freeze([
+    "BOOKING",
+    "LOCATION_RENTAL",
+]);
+
 export function normalizePaymentProvider(provider, fallback = "STRIPE") {
     const normalized = String(provider ?? "").trim().toUpperCase();
     return PAYMENT_PROVIDERS.includes(normalized) ? normalized : fallback;
@@ -42,6 +47,11 @@ export function normalizePaymentProvider(provider, fallback = "STRIPE") {
 export function normalizePaymentStatus(status, fallback = "PENDING") {
     const normalized = String(status ?? "").trim().toUpperCase();
     return PAYMENT_STATUSES.includes(normalized) ? normalized : fallback;
+}
+
+export function normalizeCheckoutReferenceType(type, fallback = "BOOKING") {
+    const normalized = String(type ?? "").trim().toUpperCase();
+    return CHECKOUT_REFERENCE_TYPES.includes(normalized) ? normalized : fallback;
 }
 
 export function eurosToCents(amount) {
@@ -54,13 +64,19 @@ export function centsToEuros(cents) {
 
 export function createPaymentIdempotencyKey({
     bookingId,
+    referenceId = bookingId,
+    referenceType = "BOOKING",
     provider,
     purpose = "checkout",
 }) {
-    if (!bookingId) throw new Error("bookingId is required.");
+    if (!referenceId) throw new Error("referenceId is required.");
     const normalizedProvider = normalizePaymentProvider(provider);
+    const normalizedReferenceType = normalizeCheckoutReferenceType(referenceType).toLowerCase();
     const normalizedPurpose = String(purpose || "checkout").trim().toLowerCase();
-    return `gatekeeper:${normalizedProvider.toLowerCase()}:${normalizedPurpose}:${bookingId}`;
+    if (normalizedReferenceType === "booking" && bookingId && referenceId === bookingId) {
+        return `gatekeeper:${normalizedProvider.toLowerCase()}:${normalizedPurpose}:${bookingId}`;
+    }
+    return `gatekeeper:${normalizedProvider.toLowerCase()}:${normalizedPurpose}:${normalizedReferenceType}:${referenceId}`;
 }
 
 export function createWebhookDedupeKey(provider, providerEventId) {
@@ -74,6 +90,8 @@ export function createGatekeeperPaymentReference(prefix = "gkp") {
 
 export function buildPaymentProviderRequest({
     booking,
+    referenceType = booking ? "BOOKING" : undefined,
+    referenceId = booking?.id,
     provider,
     method,
     amountCents,
@@ -83,7 +101,9 @@ export function buildPaymentProviderRequest({
     webhookUrl,
     metadata = {},
 }) {
-    if (!booking?.id) throw new Error("booking is required.");
+    const normalizedReferenceType = normalizeCheckoutReferenceType(referenceType);
+    const normalizedReferenceId = String(referenceId ?? "").trim();
+    if (!normalizedReferenceId) throw new Error("referenceId is required.");
     if (!returnUrl || !cancelUrl) throw new Error("returnUrl and cancelUrl are required.");
     const normalizedProvider = normalizePaymentProvider(provider);
     const normalizedAmount = Number(amountCents);
@@ -93,21 +113,27 @@ export function buildPaymentProviderRequest({
 
     return {
         gatekeeperPaymentId: createGatekeeperPaymentReference(),
-        bookingId: booking.id,
+        referenceType: normalizedReferenceType,
+        referenceId: normalizedReferenceId,
+        bookingId: booking?.id ?? (normalizedReferenceType === "BOOKING" ? normalizedReferenceId : null),
         provider: normalizedProvider,
         method,
         amountCents: normalizedAmount,
         currency: String(currency || "EUR").toUpperCase(),
         idempotencyKey: createPaymentIdempotencyKey({
-            bookingId: booking.id,
+            bookingId: booking?.id,
+            referenceType: normalizedReferenceType,
+            referenceId: normalizedReferenceId,
             provider: normalizedProvider,
         }),
         returnUrl,
         cancelUrl,
         webhookUrl,
         metadata: {
-            bookingId: booking.id,
-            eventId: booking.eventId ?? null,
+            referenceType: normalizedReferenceType,
+            referenceId: normalizedReferenceId,
+            bookingId: booking?.id ?? (normalizedReferenceType === "BOOKING" ? normalizedReferenceId : null),
+            eventId: booking?.eventId ?? null,
             ...metadata,
         },
     };

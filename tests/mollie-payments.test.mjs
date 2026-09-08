@@ -45,6 +45,8 @@ test("Mollie payload uses paybybank and exact cent formatting", () => {
         webhookUrl: "https://gatekeeper.test/api/payments/mollie/webhook",
         metadata: {
             gatekeeperPaymentId: "gkp_123",
+            referenceType: "BOOKING",
+            referenceId: "booking_123",
             bookingId: "booking_123",
             eventId: 42,
         },

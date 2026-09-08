@@ -11,6 +11,7 @@ node_modules/
 
 # testing
 /coverage
+/screenshots/
 
 # next.js
 /.next/
@@ -22,6 +23,9 @@ build/
 dist/
 instance/
 *.db
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # generated files
 /src/generated/prisma
@@ -60,8 +64,29 @@ meetings_archiv.json
 # generated exports/installers
 *.exe
 *.pdf
+!src/app/api/**/ticket.pdf/
+!src/app/api/**/ticket.pdf/**
 *.pkg
 *.csv
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.bak
+*.dump
+*.sql.gz
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.wav
+*.psd
+*.ai
+*.sketch
+*.xlsx
+*.xlsm
 
 # vercel
 .vercel

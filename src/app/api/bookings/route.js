@@ -1,27 +1,7 @@
 import { getOptionalCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createBookingAccessToken } from "@/lib/booking-access";
 import { calculateBookingTotals } from "@/lib/bookings";
-import { createPayPalOrder, isPayPalConfigured } from "@/lib/paypal";
 import {
-    createStripeCheckoutSession,
-    isStripeConfigured,
-} from "@/lib/stripe";
-import {
-    createMollieAdapter,
-    isMollieConfigured,
-} from "@/lib/payments/mollie";
-import {
-    buildPaymentProviderRequest,
-    eurosToCents,
-} from "@/lib/payments/domain";
-import { sendManualPaymentEmail } from "@/lib/mail";
-import {
-    createPaymentReference,
-    getManualPaymentDetails,
-} from "@/lib/manual-payments";
-import {
-    isManualPaymentMethod,
     isPaymentMethodAllowed,
     normalizePaymentMethod,
     requiresBillingAddressForCheckout,
@@ -56,9 +36,8 @@ import {
     isReservationCapacityError,
 } from "@/lib/reservations";
 import {
-    markBookingFailedAndRelease,
-    markBookingPaid,
-} from "@/lib/payment-state";
+    startEventBookingCheckoutPayment,
+} from "@/lib/checkout-payments";
 
 function jsonError(message, status = 400) {
     return Response.json({ error: message }, { status });
@@ -80,25 +59,6 @@ function getTicketTypeForSelection(event, requestedTicketTypeId) {
     }
 
     return createFallbackTicketType(event);
-}
-
-async function failBookingAndReleaseReservation(booking, data) {
-    return prisma.$transaction(async (tx) => {
-        const current = await tx.booking.findUnique({
-            where: { id: booking.id },
-        });
-
-        if (!current) return null;
-
-        if (current.status === "AWAITING_PAYMENT") {
-            await markBookingFailedAndRelease(tx, current, data);
-            return tx.booking.findUnique({
-                where: { id: current.id },
-            });
-        }
-
-        return current;
-    });
 }
 
 export async function POST(request) {
@@ -408,311 +368,14 @@ export async function POST(request) {
         }
     }
 
-    if (!booking.paymentReference) {
-        booking = await prisma.booking.update({
-            where: { id: booking.id },
-            data: {
-                paymentReference: createPaymentReference(booking.id),
-            },
-        });
-    }
+    const checkoutPayment = await startEventBookingCheckoutPayment({
+        request,
+        booking,
+        event,
+        totals,
+        paymentMethod,
+        purchaserEmail,
+    });
 
-    if (paymentMethod === "PAYPAL" && booking.paypalOrderId && booking.paypalApprovalUrl) {
-        return Response.json({
-            ok: true,
-            bookingId: booking.id,
-            accessToken: createBookingAccessToken(booking),
-            approvalUrl: booking.paypalApprovalUrl,
-            orderId: booking.paypalOrderId,
-            reused: true,
-        });
-    }
-
-    if (paymentMethod === "STRIPE" && booking.stripeCheckoutSessionId && booking.stripeStatus === "open") {
-        return Response.json({
-            ok: true,
-            bookingId: booking.id,
-            accessToken: createBookingAccessToken(booking),
-            approvalUrl: booking.providerPayload?.url ?? null,
-            sessionId: booking.stripeCheckoutSessionId,
-            reused: true,
-        });
-    }
-
-    if (
-        paymentMethod === "MOLLIE_PAY_BY_BANK" &&
-        booking.paymentProvider === "MOLLIE" &&
-        booking.providerPayload?.checkoutUrl
-    ) {
-        return Response.json({
-            ok: true,
-            bookingId: booking.id,
-            accessToken: createBookingAccessToken(booking),
-            approvalUrl: booking.providerPayload.checkoutUrl,
-            paymentId: booking.providerPayload.paymentId ?? booking.providerPayload.id ?? null,
-            reused: true,
-        });
-    }
-
-    if (totals.totalAmount <= 0) {
-        await markBookingPaid(prisma, booking, {
-                paymentProvider: "FREE",
-                paypalStatus: "NOT_REQUIRED",
-                paidAt: new Date(),
-        });
-
-        const paidBooking = await prisma.booking.findUnique({
-            where: { id: booking.id },
-        });
-
-        return Response.json({
-            ok: true,
-            bookingId: paidBooking.id,
-            accessToken: createBookingAccessToken(paidBooking),
-            approvalUrl: null,
-            orderId: null,
-            directComplete: true,
-        });
-    }
-
-    if (isManualPaymentMethod(paymentMethod)) {
-        const manualBooking = await prisma.booking.update({
-            where: { id: booking.id },
-            data: {
-                paymentProvider: paymentMethod,
-                paymentMethod,
-                status: "AWAITING_PAYMENT",
-            },
-            include: {
-                event: {
-                    include: {
-                        owner: {
-                            select: {
-                                name: true,
-                                email: true,
-                            },
-                        },
-                    },
-                },
-            },
-        });
-
-        const manualDetails = getManualPaymentDetails({
-            booking: manualBooking,
-            event,
-        });
-
-        sendManualPaymentEmail(manualBooking, manualDetails).catch((error) => {
-            console.error("Manual payment mail error:", error);
-        });
-
-        return Response.json({
-            ok: true,
-            bookingId: manualBooking.id,
-            accessToken: createBookingAccessToken(manualBooking),
-            manualComplete: true,
-            paymentMethod: manualBooking.paymentMethod,
-            paymentReference: manualBooking.paymentReference,
-        });
-    }
-
-    if (paymentMethod === "STRIPE") {
-        if (!isStripeConfigured()) {
-            await failBookingAndReleaseReservation(booking, {
-                providerPayload: {
-                    error: "Stripe configuration is missing.",
-                },
-            });
-
-            return jsonError(
-                "Stripe ist noch nicht konfiguriert. Bitte Backend-Umgebung setzen.",
-                503
-            );
-        }
-
-        const origin = new URL(request.url).origin;
-        const accessToken = createBookingAccessToken(booking);
-        const successUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&stripe_session_id={CHECKOUT_SESSION_ID}`;
-        const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&cancelled=1`;
-
-        try {
-            const stripeSession = await createStripeCheckoutSession({
-                bookingId: booking.id,
-                eventTitle: event.title,
-                unitAmount: totals.unitPrice,
-                quantity: totals.quantity,
-                totalAmount: totals.totalAmount,
-                customerEmail: purchaserEmail,
-                successUrl,
-                cancelUrl,
-            });
-
-            if (!stripeSession.id || !stripeSession.url) {
-                throw new Error("Stripe checkout session did not return a checkout URL.");
-            }
-
-            await prisma.booking.update({
-                where: { id: booking.id },
-                data: {
-                    stripeCheckoutSessionId: stripeSession.id,
-                    stripePaymentIntentId: stripeSession.paymentIntentId,
-                    stripeStatus: stripeSession.status ?? stripeSession.paymentStatus ?? "open",
-                    providerPayload: stripeSession.raw,
-                    paymentProvider: "STRIPE",
-                },
-            });
-
-            return Response.json({
-                ok: true,
-                bookingId: booking.id,
-                accessToken,
-                approvalUrl: stripeSession.url,
-                sessionId: stripeSession.id,
-            });
-        } catch (error) {
-            await failBookingAndReleaseReservation(booking, {
-                providerPayload: {
-                    error: error?.message ?? "Stripe checkout failed",
-                },
-            });
-
-            return jsonError(
-                error?.message ?? "Stripe-Buchung konnte nicht vorbereitet werden.",
-                502
-            );
-        }
-    }
-
-    if (paymentMethod === "MOLLIE_PAY_BY_BANK") {
-        if (!isMollieConfigured()) {
-            await failBookingAndReleaseReservation(booking, {
-                providerPayload: {
-                    error: "Mollie configuration is missing.",
-                },
-            });
-
-            return jsonError(
-                "Mollie ist noch nicht konfiguriert. Bitte Backend-Umgebung setzen.",
-                503
-            );
-        }
-
-        const origin = new URL(request.url).origin;
-        const accessToken = createBookingAccessToken(booking);
-        const returnUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&paymentProvider=MOLLIE`;
-        const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&cancelled=1`;
-        const webhookUrl = `${origin}/api/payments/mollie/webhook`;
-
-        try {
-            const adapter = createMollieAdapter();
-            const molliePayment = await adapter.createPayment(
-                buildPaymentProviderRequest({
-                    booking,
-                    provider: "MOLLIE",
-                    method: paymentMethod,
-                    amountCents: eurosToCents(totals.totalAmount),
-                    returnUrl,
-                    cancelUrl,
-                    metadata: {
-                        description: event.title,
-                    },
-                    webhookUrl,
-                })
-            );
-
-            if (!molliePayment.paymentId || !molliePayment.checkoutUrl) {
-                throw new Error("Mollie payment did not return a checkout URL.");
-            }
-
-            await prisma.booking.update({
-                where: { id: booking.id },
-                data: {
-                    providerPayload: molliePayment,
-                    paymentProvider: "MOLLIE",
-                },
-            });
-
-            return Response.json({
-                ok: true,
-                bookingId: booking.id,
-                accessToken,
-                approvalUrl: molliePayment.checkoutUrl,
-                paymentId: molliePayment.paymentId,
-            });
-        } catch (error) {
-            await failBookingAndReleaseReservation(booking, {
-                providerPayload: {
-                    error: error?.message ?? "Mollie payment failed",
-                },
-            });
-
-            return jsonError(
-                error?.message ?? "Mollie-Buchung konnte nicht vorbereitet werden.",
-                502
-            );
-        }
-    }
-
-    if (!isPayPalConfigured()) {
-        await failBookingAndReleaseReservation(booking, {
-            providerPayload: {
-                error: "PayPal configuration is missing.",
-            },
-        });
-
-        return jsonError(
-            "PayPal ist noch nicht konfiguriert. Bitte Backend-Umgebung setzen.",
-            503
-        );
-    }
-
-    const origin = new URL(request.url).origin;
-    const accessToken = createBookingAccessToken(booking);
-    const returnUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}`;
-    const cancelUrl = `${origin}/events/${event.id}/checkout?bookingId=${booking.id}&accessToken=${encodeURIComponent(accessToken)}&cancelled=1`;
-
-    try {
-        const paypalOrder = await createPayPalOrder({
-            bookingId: booking.id,
-            eventTitle: event.title,
-            totalAmount: totals.totalAmount,
-            returnUrl,
-            cancelUrl,
-            merchantEmail: event.owner.paypalEmail,
-        });
-
-        if (!paypalOrder.orderId || !paypalOrder.approvalUrl) {
-            throw new Error("PayPal order creation did not return an approval URL.");
-        }
-
-        await prisma.booking.update({
-            where: { id: booking.id },
-            data: {
-                paypalOrderId: paypalOrder.orderId,
-                paypalApprovalUrl: paypalOrder.approvalUrl,
-                paypalStatus: "CREATED",
-                providerPayload: paypalOrder.raw,
-                paymentProvider: "PAYPAL",
-            },
-        });
-
-        return Response.json({
-            ok: true,
-            bookingId: booking.id,
-            accessToken,
-            approvalUrl: paypalOrder.approvalUrl,
-            orderId: paypalOrder.orderId,
-        });
-    } catch (error) {
-        await failBookingAndReleaseReservation(booking, {
-            providerPayload: {
-                error: error?.message ?? "PayPal order failed",
-            },
-        });
-
-        return jsonError(
-            error?.message ?? "PayPal-Buchung konnte nicht vorbereitet werden.",
-            502
-        );
-    }
+    return checkoutPayment.response;
 }

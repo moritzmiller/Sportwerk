@@ -1,9 +1,0 @@
-playwright
-beautifulsoup4
-reportlab
-Pillow
-Flask
-requests
-google-auth
-openai
-python-docx

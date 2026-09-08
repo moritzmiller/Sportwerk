@@ -48,26 +48,29 @@ export function normalizeMollieStatus(status) {
 }
 
 export function buildMolliePaymentPayload(request, config = getMollieConfig()) {
-    if (!request?.bookingId) throw new Error("bookingId is required.");
+    if (!request?.referenceId && !request?.bookingId) throw new Error("referenceId is required.");
     if (!request.returnUrl || !request.cancelUrl) {
         throw new Error("Mollie redirect and cancel URLs are required.");
     }
 
     const method = MOLLIE_METHODS[request.method] ?? "paybybank";
+    const referenceId = request.referenceId ?? request.bookingId;
 
     return {
         amount: {
             currency: request.currency || config.currency || "EUR",
             value: formatAmount(request.amountCents),
         },
-        description: request.metadata?.description || `GateKeeper booking ${request.bookingId}`,
+        description: request.metadata?.description || `GateKeeper checkout ${referenceId}`,
         method,
         redirectUrl: request.returnUrl,
         cancelUrl: request.cancelUrl,
         webhookUrl: request.webhookUrl,
         metadata: {
             gatekeeperPaymentId: request.gatekeeperPaymentId,
-            bookingId: request.bookingId,
+            referenceType: request.referenceType ?? "BOOKING",
+            referenceId,
+            bookingId: request.bookingId ?? null,
             eventId: request.metadata?.eventId ?? null,
         },
     };

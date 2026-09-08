@@ -8,6 +8,7 @@ import {
     createPaymentIdempotencyKey,
     createWebhookDedupeKey,
     eurosToCents,
+    normalizeCheckoutReferenceType,
     validatePaymentProviderAdapter,
 } from "../src/lib/payments/domain.js";
 
@@ -24,10 +25,18 @@ test("payment idempotency keys are provider neutral and stable per booking", () 
         }),
         "gatekeeper:stripe:checkout:booking_123"
     );
+    assert.equal(
+        createPaymentIdempotencyKey({
+            referenceType: "location_rental",
+            referenceId: "rental_123",
+            provider: "mollie",
+        }),
+        "gatekeeper:mollie:checkout:location_rental:rental_123"
+    );
     assert.equal(createWebhookDedupeKey("mollie", "evt_1"), "MOLLIE:evt_1");
 });
 
-test("provider request uses Gatekeeper identifiers and explicit idempotency", () => {
+test("provider request uses Gatekeeper booking identifiers and explicit idempotency", () => {
     const request = buildPaymentProviderRequest({
         booking: { id: "booking_123", eventId: 42 },
         provider: "mollie",
@@ -38,6 +47,8 @@ test("provider request uses Gatekeeper identifiers and explicit idempotency", ()
     });
 
     assert.equal(request.provider, "MOLLIE");
+    assert.equal(request.referenceType, "BOOKING");
+    assert.equal(request.referenceId, "booking_123");
     assert.equal(request.bookingId, "booking_123");
     assert.equal(request.amountCents, 3050);
     assert.equal(request.currency, "EUR");
@@ -45,8 +56,38 @@ test("provider request uses Gatekeeper identifiers and explicit idempotency", ()
     assert.equal(request.webhookUrl, undefined);
     assert.match(request.gatekeeperPaymentId, /^gkp_[a-f0-9]{32}$/);
     assert.deepEqual(request.metadata, {
+        referenceType: "BOOKING",
+        referenceId: "booking_123",
         bookingId: "booking_123",
         eventId: 42,
+    });
+});
+
+test("provider request supports future non-event checkout references", () => {
+    const request = buildPaymentProviderRequest({
+        referenceType: "LOCATION_RENTAL",
+        referenceId: "rental_123",
+        provider: "mollie",
+        method: "MOLLIE_PAY_BY_BANK",
+        amountCents: 4500,
+        returnUrl: "https://example.test/rentals/return",
+        cancelUrl: "https://example.test/rentals/cancel",
+        metadata: {
+            locationId: "court_7",
+        },
+    });
+
+    assert.equal(normalizeCheckoutReferenceType("location_rental"), "LOCATION_RENTAL");
+    assert.equal(request.referenceType, "LOCATION_RENTAL");
+    assert.equal(request.referenceId, "rental_123");
+    assert.equal(request.bookingId, null);
+    assert.equal(request.idempotencyKey, "gatekeeper:mollie:checkout:location_rental:rental_123");
+    assert.deepEqual(request.metadata, {
+        referenceType: "LOCATION_RENTAL",
+        referenceId: "rental_123",
+        bookingId: null,
+        eventId: null,
+        locationId: "court_7",
     });
 });
 
