@@ -4,16 +4,45 @@ import { getOptionalCurrentUser } from "@/lib/auth";
 
 export default async function Nav() {
     const user = await getOptionalCurrentUser();
-    const isOrganizer = user && user.role !== "VISITOR";
+    const canUseOffers = user?.role === "ORGANIZER" || user?.role === "ADMIN";
 
     return (
         <nav className="nav">
             <div className="container nav__inner">
-                <Link href={user ? "/dashboard" : "/"} className="nav__brand">
+                <Link href="/" className="nav__brand">
                     GateKeeper
                 </Link>
 
                 <ul className="nav__links">
+                    <li>
+                        <Link href="/" className="nav__link">
+                            Events
+                        </Link>
+                    </li>
+                    <li>
+                        <Link href="/cities" className="nav__link">
+                            Städte
+                        </Link>
+                    </li>
+                    <li>
+                        <Link href="/venues" className="nav__link">
+                            Venues
+                        </Link>
+                    </li>
+                    {canUseOffers ? (
+                        <li>
+                            <Link href="/angebote" className="nav__link">
+                                Angebote
+                            </Link>
+                        </li>
+                    ) : null}
+                    {user ? (
+                        <li>
+                            <Link href="/erich/register" className="nav__link">
+                                ERICH
+                            </Link>
+                        </li>
+                    ) : null}
                     {user ? (
                         <>
                             <li>
@@ -21,22 +50,13 @@ export default async function Nav() {
                                     Dashboard
                                 </Link>
                             </li>
-                            {isOrganizer ? (
-                                <li>
-                                    <Link href="/dashboard/check-in" className="nav__link">
-                                        Check-in
-                                    </Link>
-                                </li>
-                            ) : null}
                             <li>
-                                <Link
-                                    href={
-                                        isOrganizer
-                                            ? "/dashboard/bookings"
-                                            : "/dashboard/orders"
-                                    }
-                                    className="nav__link"
-                                >
+                                <Link href="/dashboard/profile" className="nav__link">
+                                    Profil
+                                </Link>
+                            </li>
+                            <li>
+                                <Link href="/dashboard/orders" className="nav__link">
                                     Bestellungen
                                 </Link>
                             </li>
@@ -45,18 +65,11 @@ export default async function Nav() {
                             </li>
                         </>
                     ) : (
-                        <>
-                            <li>
-                                <Link href="/#plattform" className="nav__link">
-                                    Plattform
-                                </Link>
-                            </li>
-                            <li>
-                                <Link href="/auth" className="btn btn-primary">
-                                    Dashboard öffnen
-                                </Link>
-                            </li>
-                        </>
+                        <li>
+                            <Link href="/auth" className="btn btn-primary">
+                                Anmelden
+                            </Link>
+                        </li>
                     )}
                 </ul>
             </div>

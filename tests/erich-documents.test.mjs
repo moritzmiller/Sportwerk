@@ -65,21 +65,15 @@ function paidBatch(overrides = {}) {
     };
 }
 
-function createStore({ batch = paidBatch(), existingTicket = null } = {}) {
+function createStore({ batch = paidBatch(), existingTicket = null, emailMessages = [] } = {}) {
     const calls = [];
     const state = {
         ticket: existingTicket,
-        emailMessages: [],
+        emailMessages,
     };
 
     return {
         calls,
-        ticket: {
-            findFirst: async (args) => {
-                calls.push(["ticket.findFirst", args]);
-                return null;
-            },
-        },
         erichRegistrationBatch: {
             findUnique: async (args) => {
                 calls.push(["erichRegistrationBatch.findUnique", args]);
@@ -153,7 +147,6 @@ test("ERICH paid batch preparation creates tickets, document issues and one repo
         store.calls.map(([name]) => name),
         [
             "erichRegistrationBatch.findUnique",
-            "ticket.findFirst",
             "erichTicket.findFirst",
             "erichTicket.create",
             "erichDocumentIssue.upsert",
@@ -164,16 +157,23 @@ test("ERICH paid batch preparation creates tickets, document issues and one repo
     );
 });
 
-test("ERICH paid batch preparation prefers unified tickets when a race entry was synced", async () => {
-    const store = createStore();
-    store.ticket.findFirst = async (args) => {
-        store.calls.push(["ticket.findFirst", args]);
-        return {
-            id: "ticket-unified-1",
-            status: "VALID",
-            checkedInAt: null,
-        };
+test("ERICH paid batch preparation reuses active tickets and prepared document emails", async () => {
+    const existingTicket = {
+        id: "ticket-row-1",
+        ticketId: "ERI-EXISTING",
+        status: "ACTIVE",
+        documentIssues: [{ id: "issue-1", status: "ISSUED" }],
     };
+    const store = createStore({
+        existingTicket,
+        emailMessages: [
+            {
+                id: "message-1",
+                status: "PREPARED",
+                payload: { athleteId: "athlete-1" },
+            },
+        ],
+    });
 
     const result = await preparePaidErichRegistrationDocuments(store, {
         batchId: "batch-1",
@@ -183,18 +183,40 @@ test("ERICH paid batch preparation prefers unified tickets when a race entry was
     });
 
     assert.equal(result.action, "prepared");
-    assert.equal(result.documents[0].ticketIds.length, 1);
-    assert.match(result.documents[0].ticketIds[0], /^gkt1\.ticket-unified-1\./);
-    assert.ok(
-        store.calls.some(
-            ([name, args]) =>
-                name === "ticket.findFirst" &&
-                args.where.holderDetails.path[1] === "entryId" &&
-                args.where.holderDetails.equals === "entry-1"
-        )
+    assert.deepEqual(result.documents[0].ticketIds, ["ERI-EXISTING"]);
+    assert.equal(result.documents[0].emailMessageId, "message-1");
+    assert.equal(
+        store.calls.some(([name]) => name === "erichTicket.create"),
+        false
     );
-    assert.equal(store.calls.some(([name]) => name === "erichTicket.create"), false);
-    assert.equal(store.calls.some(([name]) => name === "erichDocumentIssue.upsert"), false);
+    assert.equal(
+        store.calls.some(([name]) => name === "erichEmailMessage.create" || name === "erichEmailMessage.update"),
+        false
+    );
+    assert.equal(
+        store.calls.some(([name]) => name === "erichDocumentIssue.upsert"),
+        true
+    );
+});
+
+test("ERICH document preparation skips batches that are not paid", async () => {
+    const store = createStore({
+        batch: paidBatch({ status: "CHECKOUT", paidAt: null }),
+    });
+
+    const result = await preparePaidErichRegistrationDocuments(store, {
+        batchId: "batch-1",
+        actorId: "user-1",
+        now,
+    });
+
+    assert.deepEqual(result, {
+        action: "skipped",
+        reason: "batch-not-paid",
+        batchId: "batch-1",
+        documents: [],
+    });
+    assert.deepEqual(store.calls.map(([name]) => name), ["erichRegistrationBatch.findUnique"]);
 });
 
 test("ERICH ticket PDF generation returns a PDF buffer with race QR data", async () => {

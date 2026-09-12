@@ -1,43 +1,30 @@
-import { calculateGatekeeperFee, roundMoney } from "./fees.js";
-
-export const PAYMENT_METHODS = Object.freeze([
-    "STRIPE",
-    "MOLLIE_PAY_BY_BANK",
-    "PAYPAL",
-    "INVOICE",
-    "BANK_TRANSFER",
-]);
-export const DEFAULT_ALLOWED_PAYMENT_METHODS = Object.freeze([
-    "STRIPE",
-    "MOLLIE_PAY_BY_BANK",
-    "PAYPAL",
-    "INVOICE",
-    "BANK_TRANSFER",
-]);
+export const PAYMENT_METHODS = Object.freeze(["PAYPAL", "STRIPE", "INVOICE", "BANK_TRANSFER"]);
+export const DEFAULT_ALLOWED_PAYMENT_METHODS = Object.freeze(["PAYPAL", "STRIPE", "INVOICE", "BANK_TRANSFER"]);
 
 const PAYMENT_METHOD_LABELS = Object.freeze({
-    STRIPE: "Kreditkarte",
-    MOLLIE_PAY_BY_BANK: "Pay by Bank",
     PAYPAL: "PayPal",
+    STRIPE: "Karte oder SEPA",
     INVOICE: "Rechnung",
     BANK_TRANSFER: "Banküberweisung",
 });
 
 const PAYMENT_METHOD_DESCRIPTIONS = Object.freeze({
-    STRIPE: "Kartenzahlung über Stripe Checkout.",
-    MOLLIE_PAY_BY_BANK: "Bankzahlung über Mollie Pay by Bank.",
     PAYPAL: "Online-Zahlung über PayPal.",
+    STRIPE: "Online-Zahlung per Karte oder SEPA-Lastschrift über Stripe Checkout.",
     INVOICE: "Manuelle Zahlung per Rechnung.",
     BANK_TRANSFER: "Manuelle Zahlung per Banküberweisung.",
 });
 
 const PROVIDER_FEE_RULES = Object.freeze({
+    PAYPAL: { percent: 2.49, fixed: 0.35 },
     STRIPE: { percent: 1.5, fixed: 0.25 },
-    MOLLIE_PAY_BY_BANK: { percent: 0.9, fixed: 0.25 },
-    PAYPAL: { percent: 2.99, fixed: 0.39 },
     INVOICE: { percent: 0, fixed: 0 },
     BANK_TRANSFER: { percent: 0, fixed: 0 },
 });
+
+function roundMoney(value) {
+    return Math.round((Number(value) || 0) * 100) / 100;
+}
 
 export function normalizePaymentMethod(value, fallback = "STRIPE") {
     const upper = String(value ?? "").trim().toUpperCase();
@@ -54,16 +41,17 @@ export function normalizeAllowedPaymentMethods(value, fallback = DEFAULT_ALLOWED
     return methods.length > 0 ? methods : [...fallback];
 }
 
+export function normalizeEventPaymentMethods(value, ticketTypes = [], fallback = DEFAULT_ALLOWED_PAYMENT_METHODS) {
+    const hasPaidTicket = ticketTypes.some((ticketType) => Number(ticketType?.price || 0) > 0);
+    return hasPaidTicket ? normalizeAllowedPaymentMethods(value, fallback) : [];
+}
+
 export function isManualPaymentMethod(method) {
     return method === "INVOICE" || method === "BANK_TRANSFER";
 }
 
 export function isOnlinePaymentMethod(method) {
-    return method === "PAYPAL" || method === "STRIPE" || method === "MOLLIE_PAY_BY_BANK";
-}
-
-export function requiresBillingAddressForCheckout(method, amount = 0) {
-    return roundMoney(amount) > 0 && isManualPaymentMethod(method);
+    return method === "PAYPAL" || method === "STRIPE";
 }
 
 export function getPaymentMethodLabel(method) {
@@ -74,13 +62,10 @@ export function getPaymentMethodDescription(method) {
     return PAYMENT_METHOD_DESCRIPTIONS[method] ?? "";
 }
 
-export function getPaymentMethodFeeEstimate(method, amount, quantity = 1) {
+export function getPaymentMethodFeeEstimate(method, amount) {
     const totalAmount = roundMoney(amount);
-    const normalizedQuantity = Math.max(1, Math.min(10, Number(quantity) || 1));
-    const rule = PROVIDER_FEE_RULES[method] ?? PROVIDER_FEE_RULES.STRIPE;
+    const rule = PROVIDER_FEE_RULES[method] ?? PROVIDER_FEE_RULES.PAYPAL;
     const providerFee = totalAmount > 0 ? roundMoney(totalAmount * (rule.percent / 100) + rule.fixed) : 0;
-
-    const gatekeeperFee = calculateGatekeeperFee(totalAmount, normalizedQuantity);
 
     return {
         method,
@@ -89,18 +74,18 @@ export function getPaymentMethodFeeEstimate(method, amount, quantity = 1) {
         providerPercent: rule.percent,
         providerFixed: rule.fixed,
         providerFee,
-        gatekeeperFee,
-        customerTotal: roundMoney(totalAmount + gatekeeperFee),
+        gatekeeperFee: 0,
+        customerTotal: totalAmount,
         organizerNetEstimate: roundMoney(totalAmount - providerFee),
     };
 }
 
-export function getPaymentMethodOptions(methods = DEFAULT_ALLOWED_PAYMENT_METHODS, amount = 0, { quantity = 1 } = {}) {
+export function getPaymentMethodOptions(methods = DEFAULT_ALLOWED_PAYMENT_METHODS, amount = 0) {
     return normalizeAllowedPaymentMethods(methods).map((method) => ({
         value: method,
         label: getPaymentMethodLabel(method),
         description: getPaymentMethodDescription(method),
-        fee: getPaymentMethodFeeEstimate(method, amount, quantity),
+        fee: getPaymentMethodFeeEstimate(method, amount),
     }));
 }
 

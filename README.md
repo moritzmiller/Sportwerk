@@ -101,6 +101,8 @@ The check covers:
 - Mollie mode, API key, currency, and webhook status configuration
 - transactional mail provider availability
 
+For the first free-event launch path, use `docs/GO_LIVE_FREE_EVENTS.md`.
+
 Use this when network access is not available, for example in lightweight CI:
 
 ```bash

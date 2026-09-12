@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { serializeScannerBooking } from "@/lib/scanner-privacy";
 import { verifyScannerToken } from "@/lib/scanner-links";
+import { markBookingAndTicketsCheckedIn } from "@/lib/ticket-checkin";
 import {
     buildRateLimitKey,
     checkPersistentRateLimit,
@@ -408,15 +409,9 @@ export async function POST(request, { params }) {
             );
         }
 
-        const updated = await tx.booking.updateMany({
-            where: {
-                id: booking.id,
-                checkedInAt: null,
-            },
-            data: {
-                checkedInAt: now,
-                checkedInVia: source,
-            },
+        const updated = await markBookingAndTicketsCheckedIn(tx, booking, {
+            now,
+            via: source,
         });
 
         if (updated.count === 0) {
@@ -441,6 +436,7 @@ export async function POST(request, { params }) {
                 id: true,
                 eventId: true,
                 purchaserName: true,
+                purchaserEmail: true,
                 quantity: true,
                 checkedInAt: true,
                 checkedInVia: true,

@@ -1,6 +1,7 @@
-﻿import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
+import "@/components/OfferStudio.css";
 
 import Nav from "@/app/global/nav.jsx";
 import AuthRecoveryRedirect from "@/components/AuthRecoveryRedirect";
@@ -20,11 +21,6 @@ export const metadata = {
     description: "Entdecke aktuelle Events in Dresden, buche Tickets und verwalte deine Buchungen.",
 };
 
-export const viewport = {
-    width: "device-width",
-    initialScale: 1,
-};
-
 export default function RootLayout({ children }) {
     return (
         <html lang="de">
@@ -35,9 +31,10 @@ export default function RootLayout({ children }) {
                 <footer className="footer">
                     <div className="container flex-between">
                         <span>&copy; {new Date().getFullYear()} GateKeeper</span>
-                        <ul>
-                            <li><Link href="/datenschutz">Datenschutz</Link></li>
+                        <ul className="footer__links" aria-label="Rechtliches">
+                            <li><Link href="/kontakt">Kontakt</Link></li>
                             <li><Link href="/impressum">Impressum</Link></li>
+                            <li><Link href="/datenschutz">Datenschutz</Link></li>
                             <li><Link href="/agb">AGB</Link></li>
                         </ul>
                     </div>
@@ -46,4 +43,3 @@ export default function RootLayout({ children }) {
         </html>
     );
 }
-

@@ -22,6 +22,35 @@ function createSessionEvent(type, overrides = {}) {
     };
 }
 
+function createRefundEvent(type, overrides = {}) {
+    const object =
+        type === "charge.refunded"
+            ? {
+                  object: "charge",
+                  id: overrides.chargeId ?? "ch_test_1",
+                  refunded: overrides.refunded ?? true,
+                  status: overrides.status ?? "succeeded",
+                  payment_intent: overrides.paymentIntentId ?? "pi_test_1",
+                  metadata: {
+                      bookingId: overrides.bookingId ?? "booking-1",
+                  },
+              }
+            : {
+                  object: "refund",
+                  id: overrides.refundId ?? "re_test_1",
+                  status: overrides.status ?? "succeeded",
+                  payment_intent: overrides.paymentIntentId ?? "pi_test_1",
+                  metadata: {
+                      bookingId: overrides.bookingId ?? "booking-1",
+                  },
+              };
+
+    return {
+        type,
+        data: { object },
+    };
+}
+
 function createTx(booking) {
     const state = { booking: { ...booking } };
     const calls = [];
@@ -93,6 +122,83 @@ test("marks awaiting booking as paid from completed Stripe checkout session", as
     assert.equal(tx.state.booking.stripePaymentIntentId, "pi_test_1");
 });
 
+test("keeps SEPA checkout session pending until Stripe confirms async payment", async () => {
+    const tx = createTx(baseBooking);
+
+    const result = await processStripeWebhookEvent(
+        tx,
+        createSessionEvent("checkout.session.completed", {
+            paymentStatus: "unpaid",
+            status: "complete",
+        })
+    );
+
+    assert.equal(result.action, "pending");
+    assert.equal(tx.state.booking.status, "AWAITING_PAYMENT");
+    assert.equal(tx.state.booking.paymentProvider, "STRIPE");
+    assert.equal(tx.state.booking.stripePaymentIntentId, "pi_test_1");
+    assert.equal(tx.state.booking.stripeStatus, "unpaid");
+});
+
+test("marks asynchronous Stripe checkout success as paid", async () => {
+    const tx = createTx({
+        ...baseBooking,
+        stripePaymentIntentId: "pi_test_1",
+    });
+
+    const result = await processStripeWebhookEvent(
+        tx,
+        createSessionEvent("checkout.session.async_payment_succeeded")
+    );
+
+    assert.equal(result.action, "paid");
+    assert.equal(tx.state.booking.status, "PAID");
+});
+
+test("fails asynchronous Stripe checkout failure and releases reservation", async () => {
+    const tx = createTx({
+        ...baseBooking,
+        stripePaymentIntentId: "pi_test_1",
+    });
+
+    const result = await processStripeWebhookEvent(
+        tx,
+        createSessionEvent("checkout.session.async_payment_failed", {
+            paymentStatus: "unpaid",
+            status: "complete",
+        })
+    );
+
+    assert.equal(result.action, "failed");
+    assert.equal(tx.state.booking.status, "FAILED");
+    assert.ok(tx.calls.some(([name]) => name === "event.updateMany"));
+});
+
+test("keeps Stripe payment intent processing as awaiting payment", async () => {
+    const tx = createTx({
+        ...baseBooking,
+        stripePaymentIntentId: "pi_test_1",
+    });
+
+    const result = await processStripeWebhookEvent(tx, {
+        type: "payment_intent.processing",
+        data: {
+            object: {
+                object: "payment_intent",
+                id: "pi_test_1",
+                status: "processing",
+                metadata: {
+                    bookingId: "booking-1",
+                },
+            },
+        },
+    });
+
+    assert.equal(result.action, "pending");
+    assert.equal(tx.state.booking.status, "AWAITING_PAYMENT");
+    assert.equal(tx.state.booking.stripeStatus, "processing");
+});
+
 test("fails awaiting booking and releases reservation from expired Stripe session", async () => {
     const tx = createTx(baseBooking);
 
@@ -108,6 +214,62 @@ test("fails awaiting booking and releases reservation from expired Stripe sessio
     assert.equal(tx.state.booking.status, "FAILED");
     assert.ok(tx.calls.some(([name]) => name === "event.updateMany"));
     assert.ok(tx.calls.some(([name]) => name === "eventTicketType.updateMany"));
+});
+
+test("refunds paid booking and releases reservation from refunded Stripe charge", async () => {
+    const tx = createTx({
+        ...baseBooking,
+        status: "PAID",
+        stripePaymentIntentId: "pi_test_1",
+    });
+
+    const result = await processStripeWebhookEvent(
+        tx,
+        createRefundEvent("charge.refunded")
+    );
+
+    assert.equal(result.action, "refunded");
+    assert.equal(tx.state.booking.status, "REFUNDED");
+    assert.equal(tx.state.booking.paymentCancellationReason, "Stripe refund webhook");
+    assert.equal(tx.state.booking.stripeStatus, "succeeded");
+    assert.ok(tx.calls.some(([name]) => name === "event.updateMany"));
+    assert.ok(tx.calls.some(([name]) => name === "eventTicketType.updateMany"));
+});
+
+test("refunds paid booking from succeeded Stripe refund update", async () => {
+    const tx = createTx({
+        ...baseBooking,
+        status: "PAID",
+        stripePaymentIntentId: "pi_test_1",
+    });
+
+    const result = await processStripeWebhookEvent(
+        tx,
+        createRefundEvent("refund.updated")
+    );
+
+    assert.equal(result.action, "refunded");
+    assert.equal(tx.state.booking.status, "REFUNDED");
+});
+
+test("ignores Stripe refund updates that are not succeeded", async () => {
+    const tx = createTx({
+        ...baseBooking,
+        status: "PAID",
+        stripePaymentIntentId: "pi_test_1",
+    });
+
+    const result = await processStripeWebhookEvent(
+        tx,
+        createRefundEvent("refund.updated", { status: "pending" })
+    );
+
+    assert.deepEqual(result, {
+        action: "ignored",
+        reason: "refund-not-succeeded",
+        eventType: "refund.updated",
+    });
+    assert.equal(tx.calls.length, 0);
 });
 
 test("ignores unsupported Stripe webhook events", async () => {

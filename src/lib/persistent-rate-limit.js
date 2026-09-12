@@ -128,7 +128,7 @@ export function rateLimitResponse(message, result) {
         return Response.json(
             {
                 error:
-                    "Der Dienst ist gerade nicht vollstÃ¤ndig erreichbar. Bitte versuche es gleich erneut.",
+                    "Der Dienst ist gerade nicht vollstaendig erreichbar. Bitte versuche es gleich erneut.",
                 code: "RATE_LIMIT_UNAVAILABLE",
                 retryAfterSeconds: result.retryAfterSeconds,
             },

@@ -9,7 +9,11 @@ import {
 import { createAdminClient } from "@/lib/supabase/server";
 import { getAppUrl } from "@/lib/env";
 import { attachOrCreateUserProfile } from "@/lib/auth-profile";
-import { getGeneratedAuthActionLink, isAuthEmailRateLimit } from "@/lib/auth-email-links";
+import {
+    getGeneratedAuthActionLink,
+    isAuthEmailRateLimit,
+    isMailNotConfiguredError,
+} from "@/lib/auth-email-links";
 import { sendAccountVerificationEmail } from "@/lib/mail";
 import {
     claimErichGuestSessionForUser,
@@ -58,6 +62,10 @@ function normalizeRegistrationRole(value) {
     return role === "ORGANIZER" ? "ORGANIZER" : "VISITOR";
 }
 
+function canExposeDevelopmentVerificationLink() {
+    return process.env.NODE_ENV !== "production";
+}
+
 export async function POST(request) {
     let body;
     try {
@@ -80,7 +88,7 @@ export async function POST(request) {
 
     if (!isValidEmail(email) || password.length < 8 || password.length > 200) {
         return Response.json(
-            { error: "Bitte eine gueltige E-Mail und ein Passwort ab 8 Zeichen verwenden." },
+            { error: "Bitte eine gültige E-Mail und ein Passwort ab 8 Zeichen verwenden." },
             { status: 400 }
         );
     }
@@ -143,7 +151,7 @@ export async function POST(request) {
             return Response.json(
                 {
                     error:
-                        "Registrierung ist aktuell nicht erreichbar. Bitte Supabase Auth und Netzwerkverbindung pruefen.",
+                        "Registrierung ist aktuell nicht erreichbar. Bitte Supabase Auth und Netzwerkverbindung prüfen.",
                 },
                 { status: 503 }
             );
@@ -153,7 +161,7 @@ export async function POST(request) {
             return Response.json(
                 {
                     error:
-                        "Diese E-Mail ist bereits registriert. Bitte melde dich an oder setze dein Passwort zurueck.",
+                        "Diese E-Mail ist bereits registriert. Bitte melde dich an oder setze dein Passwort zurück.",
                 },
                 { status: 409 }
             );
@@ -222,6 +230,20 @@ export async function POST(request) {
             verificationUrl
         );
     } catch (error) {
+        if (isMailNotConfiguredError(error) && canExposeDevelopmentVerificationLink()) {
+            return Response.json({
+                ok: true,
+                needsConfirmation: true,
+                mailSent: false,
+                mailProvider: "development-link",
+                verificationUrl,
+                role: user.role ?? role,
+                erichGuestClaim,
+                message:
+                    "Mailversand ist lokal nicht konfiguriert. Nutze den Entwicklungslink zur Kontoaktivierung.",
+            });
+        }
+
         console.error("[Register] GateKeeper verification mail failed:", error);
         await logSystemEvent({
             area: "auth",
@@ -231,7 +253,7 @@ export async function POST(request) {
         return Response.json(
             {
                 error:
-                    "Konto wurde vorbereitet, aber die Aktivierungs-Mail konnte nicht versendet werden. Bitte GateKeeper Mail-Konfiguration pruefen.",
+                    "Konto wurde vorbereitet, aber die Aktivierungs-Mail konnte nicht versendet werden. Bitte GateKeeper Mail-Konfiguration prüfen.",
             },
             { status: 503 }
         );

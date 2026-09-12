@@ -1,13 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { calculateBookingTotals, formatMoney } from "@/lib/bookings";
-import { getEventBookingQuestions } from "@/lib/event-options";
 import { formatEventPrice } from "@/lib/events";
 import {
     getPaymentMethodOptions,
     normalizeAllowedPaymentMethods,
-    requiresBillingAddressForCheckout,
 } from "@/lib/payment-methods";
 import { createFallbackTicketType } from "@/lib/ticket-types";
 
@@ -31,8 +30,6 @@ function createInitialForm(initialCustomer, allowedPaymentMethods) {
         billingCity: initialCustomer?.billingCity ?? "",
         billingCountry: initialCustomer?.billingCountry ?? "DE",
         paymentMethod,
-        promoCode: "",
-        registrationAnswers: {},
     };
 }
 
@@ -72,27 +69,13 @@ export default function CheckoutForm({ event, initialCustomer }) {
     );
     const normalizedQuantity = Math.min(quantity, maxQuantity);
     const totals = calculateBookingTotals(selectedTicketType?.price ?? event.price, normalizedQuantity);
-    const bookingQuestions = getEventBookingQuestions(event);
-    const hasPaymentDue = totals.totalAmount > 0;
-    const paymentMethods = getPaymentMethodOptions(allowedPaymentMethods, totals.discountedSubtotal, {
-        quantity: normalizedQuantity,
-    });
-    const billingAddressRequired = requiresBillingAddressForCheckout(form.paymentMethod, totals.totalAmount);
+    const isFreeBooking = totals.totalAmount <= 0;
+    const paymentMethods = getPaymentMethodOptions(allowedPaymentMethods, totals.totalAmount);
 
     function updateField(name, value) {
         setForm((current) => ({
             ...current,
             [name]: value,
-        }));
-    }
-
-    function updateRegistrationAnswer(questionId, value) {
-        setForm((current) => ({
-            ...current,
-            registrationAnswers: {
-                ...current.registrationAnswers,
-                [questionId]: value,
-            },
         }));
     }
 
@@ -115,7 +98,6 @@ export default function CheckoutForm({ event, initialCustomer }) {
                     eventId: event.id,
                     quantity: normalizedQuantity,
                     ticketTypeId: selectedTicketType?.id ?? null,
-                    registrationAnswers: form.registrationAnswers,
                     website,
                     formStartedAt,
                     ...form,
@@ -133,13 +115,13 @@ export default function CheckoutForm({ event, initialCustomer }) {
             }
 
             if (data.directComplete) {
-                window.location.href = buildCheckoutReturnUrl(event.id, data.bookingId, data.accessToken);
+                window.location.href = `/events/${event.id}/checkout?bookingId=${data.bookingId}`;
                 return;
             }
 
             if (data.manualComplete) {
                 setMessage("Deine Buchung wurde gespeichert. Zahlungsdetails folgen.");
-                window.location.href = buildCheckoutReturnUrl(event.id, data.bookingId, data.accessToken);
+                window.location.href = `/events/${event.id}/checkout?bookingId=${data.bookingId}`;
                 return;
             }
 
@@ -176,7 +158,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
             <section className="card stack">
                 <div className="section-title-row">
                     <h2>Deine Daten</h2>
-                    <span className="text-muted">Sichere Buchung mit transparenter Gebühr</span>
+                    <span className="text-muted">Sichere Buchung ohne GateKeeper-Gebühr</span>
                 </div>
 
                 <div className="grid checkout-form__grid">
@@ -242,72 +224,6 @@ export default function CheckoutForm({ event, initialCustomer }) {
                 </div>
             </section>
 
-            {bookingQuestions.length > 0 ? (
-                <section className="card stack">
-                    <div className="section-title-row">
-                        <h2>Teilnehmerangaben</h2>
-                        <span className="text-muted">Wird mit der Bestellung gespeichert</span>
-                    </div>
-
-                    <div className="grid checkout-form__grid">
-                        {bookingQuestions.map((question) => (
-                            <div key={question.id} className="field">
-                                <label className="label" htmlFor={`registration-${question.id}`}>
-                                    {question.label}
-                                </label>
-                                {question.type === "select" ? (
-                                    <select
-                                        id={`registration-${question.id}`}
-                                        className="select"
-                                        value={form.registrationAnswers[question.id] ?? ""}
-                                        onChange={(e) =>
-                                            updateRegistrationAnswer(question.id, e.target.value)
-                                        }
-                                        required={question.required}
-                                    >
-                                        <option value="">Bitte auswaehlen</option>
-                                        {(question.options ?? []).map((option) => (
-                                            <option key={option} value={option}>
-                                                {option}
-                                            </option>
-                                        ))}
-                                    </select>
-                                ) : question.type === "checkbox" ? (
-                                    <label className="checkline">
-                                        <input
-                                            type="checkbox"
-                                            checked={Boolean(form.registrationAnswers[question.id])}
-                                            onChange={(e) =>
-                                                updateRegistrationAnswer(question.id, e.target.checked)
-                                            }
-                                            required={question.required}
-                                        />
-                                        <span>{question.label}</span>
-                                    </label>
-                                ) : (
-                                    <input
-                                        id={`registration-${question.id}`}
-                                        type={
-                                            question.type === "number" ||
-                                            question.type === "date" ||
-                                            question.type === "time"
-                                                ? question.type
-                                                : "text"
-                                        }
-                                        className="input"
-                                        value={form.registrationAnswers[question.id] ?? ""}
-                                        onChange={(e) =>
-                                            updateRegistrationAnswer(question.id, e.target.value)
-                                        }
-                                        required={question.required}
-                                    />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            ) : null}
-
             <section className="card stack">
                 <div className="section-title-row">
                     <h2>Tickettyp</h2>
@@ -348,12 +264,12 @@ export default function CheckoutForm({ event, initialCustomer }) {
                 </div>
             </section>
 
-            {billingAddressRequired ? (
-                <section className="card stack">
+            {!isFreeBooking ? (
+            <section className="card stack">
                 <div className="section-title-row">
                     <h2>Rechnungsadresse</h2>
                     <span className="text-muted">
-                        Für Rechnung und Banküberweisung erforderlich
+                        Wird mit der Bestellung gespeichert
                     </span>
                 </div>
 
@@ -368,7 +284,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                             value={form.billingName}
                             onChange={(e) => updateField("billingName", e.target.value)}
                             placeholder="Rechnungsempfänger"
-                            required={billingAddressRequired}
+                            required
                         />
                     </div>
 
@@ -384,7 +300,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                                 updateField("billingStreet", e.target.value)
                             }
                             placeholder="Musterstraße 12"
-                            required={billingAddressRequired}
+                            required
                         />
                     </div>
 
@@ -400,7 +316,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                                 updateField("billingPostalCode", e.target.value)
                             }
                             placeholder="01067"
-                            required={billingAddressRequired}
+                            required
                         />
                     </div>
 
@@ -414,7 +330,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                             value={form.billingCity}
                             onChange={(e) => updateField("billingCity", e.target.value)}
                             placeholder="Dresden"
-                            required={billingAddressRequired}
+                            required
                         />
                     </div>
 
@@ -431,7 +347,7 @@ export default function CheckoutForm({ event, initialCustomer }) {
                             }
                             placeholder="DE"
                             maxLength={2}
-                            required={billingAddressRequired}
+                            required
                         />
                     </div>
 
@@ -450,44 +366,50 @@ export default function CheckoutForm({ event, initialCustomer }) {
                         />
                     </div>
                 </div>
-                </section>
+            </section>
             ) : null}
 
-            {hasPaymentDue ? (
-                <section className="card stack">
-                    <div className="section-title-row">
-                        <h2>Zahlungsmethode</h2>
-                        <span className="text-muted">
-                            Online sofort, manuell mit Zahlungsreferenz
-                        </span>
-                    </div>
+            {!isFreeBooking ? (
+            <section className="card stack">
+                <div className="section-title-row">
+                    <h2>Zahlungsmethode</h2>
+                    <span className="text-muted">
+                        Wird im Profil und in der Bestellung gespeichert
+                    </span>
+                </div>
 
-                    <div className="payment-grid">
-                        {paymentMethods.map((method) => (
-                            <label
-                                key={method.value}
-                                className={`payment-option ${
-                                    form.paymentMethod === method.value ? "is-active" : ""
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name="paymentMethod"
-                                    value={method.value}
-                                    checked={form.paymentMethod === method.value}
-                                    onChange={() => updateField("paymentMethod", method.value)}
-                                />
-                                <span>
-                                    <strong>{method.label}</strong>
-                                    <small>{method.description}</small>
-                                    <small>
-                                        GateKeeper-Gebühr: {formatMoney(method.fee.gatekeeperFee)}
-                                    </small>
-                                </span>
-                            </label>
-                        ))}
-                    </div>
-                </section>
+                <p className="text-muted">
+                    Online-Zahlungen werden direkt verarbeitet. Manuelle
+                    Zahlungsmethoden bleiben als offene Zahlung mit Referenz
+                    gespeichert.
+                </p>
+
+                <div className="payment-grid">
+                    {paymentMethods.map((method) => (
+                        <label
+                            key={method.value}
+                            className={`payment-option ${
+                                form.paymentMethod === method.value ? "is-active" : ""
+                            }`}
+                        >
+                            <input
+                                type="radio"
+                                name="paymentMethod"
+                                value={method.value}
+                                checked={form.paymentMethod === method.value}
+                                onChange={() => updateField("paymentMethod", method.value)}
+                            />
+                            <span>
+                                <strong>{method.label}</strong>
+                                <small>{method.description}</small>
+                                <small>
+                                    GateKeeper-Gebühr: {formatMoney(method.fee.gatekeeperFee)}
+                                </small>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+            </section>
             ) : null}
 
             <section className="card stack">
@@ -533,27 +455,6 @@ export default function CheckoutForm({ event, initialCustomer }) {
 
             <section className="card stack">
                 <div className="section-title-row">
-                    <h2>Promo-Code</h2>
-                    <span className="text-muted">Optional</span>
-                </div>
-
-                <div className="field">
-                    <label className="label" htmlFor="promoCode">
-                        Code
-                    </label>
-                    <input
-                        id="promoCode"
-                        className="input"
-                        value={form.promoCode}
-                        onChange={(e) => updateField("promoCode", e.target.value.toUpperCase())}
-                        placeholder="EARLY10"
-                        autoComplete="off"
-                    />
-                </div>
-            </section>
-
-            <section className="card stack">
-                <div className="section-title-row">
                     <h2>Zahlungsabschluss</h2>
                     <span className="text-muted">Schritt 3 von 3</span>
                 </div>
@@ -571,7 +472,11 @@ export default function CheckoutForm({ event, initialCustomer }) {
                         required
                     />
                     <span>
-                        Ich akzeptiere die Buchungs- und Stornierungsbedingungen.
+                        Ich akzeptiere die{" "}
+                        <Link href="/agb" className="inline-link" target="_blank">
+                            Buchungs- und Stornierungsbedingungen
+                        </Link>
+                        .
                     </span>
                 </label>
 
@@ -603,22 +508,12 @@ export default function CheckoutForm({ event, initialCustomer }) {
                         <strong>{normalizedQuantity}</strong>
                     </div>
                     <div>
-                        <span className="label">Zwischensumme</span>
-                        <strong>{formatMoney(totals.discountedSubtotal)}</strong>
-                    </div>
-                    {form.promoCode && (
-                        <div>
-                            <span className="label">Promo-Code</span>
-                            <strong>{form.promoCode}</strong>
-                        </div>
-                    )}
-                    <div>
-                        <span className="label">GateKeeper-Gebühr</span>
-                        <strong>{formatMoney(totals.serviceFee)}</strong>
-                    </div>
-                    <div>
                         <span className="label">Gesamt</span>
                         <strong>{formatMoney(totals.totalAmount)}</strong>
+                    </div>
+                    <div>
+                        <span className="label">GateKeeper-Gebühr</span>
+                        <strong>{formatMoney(0)}</strong>
                     </div>
                 </div>
             </div>
@@ -626,12 +521,4 @@ export default function CheckoutForm({ event, initialCustomer }) {
             {message && <p className="auth-message">{message}</p>}
         </form>
     );
-}
-
-function buildCheckoutReturnUrl(eventId, bookingId, accessToken) {
-    const params = new URLSearchParams({ bookingId });
-    if (accessToken) {
-        params.set("accessToken", accessToken);
-    }
-    return `/events/${eventId}/checkout?${params.toString()}`;
 }

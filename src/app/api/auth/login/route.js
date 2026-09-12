@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/prisma";
 import {
     isBotTrapTriggered,
     isValidEmail,
@@ -43,7 +44,7 @@ function mapSupabaseLoginError(error) {
         return {
             status: 401,
             code: "AUTH_EMAIL_NOT_CONFIRMED",
-            error: "Bitte bestaetige zuerst deine E-Mail-Adresse.",
+            error: "Bitte bestätige zuerst deine E-Mail-Adresse.",
         };
     }
 
@@ -55,7 +56,7 @@ function mapSupabaseLoginError(error) {
         return {
             status: 401,
             code: "AUTH_PASSWORD_INVALID",
-            error: "Das Passwort ist falsch. Bitte pruefe dein Passwort oder setze es zurueck.",
+            error: "Das Passwort ist falsch. Bitte prüfe dein Passwort oder setze es zurück.",
         };
     }
 
@@ -126,7 +127,7 @@ export async function POST(request) {
             details: error,
         });
         return loginErrorResponse(
-            "Login ist aktuell nicht erreichbar. Bitte Datenbankverbindung und Migrationen pruefen.",
+            "Login ist aktuell nicht erreichbar. Bitte Datenbankverbindung und Migrationen prüfen.",
             503,
             "AUTH_PROFILE_LOOKUP_FAILED"
         );
@@ -190,7 +191,7 @@ export async function POST(request) {
             return Response.json(
                 {
                     error:
-                        "Login ist aktuell nicht erreichbar. Bitte Supabase Auth und Netzwerkverbindung prÃ¼fen.",
+                        "Login ist aktuell nicht erreichbar. Bitte Supabase Auth und Netzwerkverbindung prüfen.",
                 },
                 { status: 503 }
             );

@@ -1,11 +1,12 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export default function ErichNav() {
     return (
         <nav className="erich-nav" aria-label="ERICH Navigation">
             <div className="erich-container erich-nav__inner">
                 <Link href="/erich/register" className="erich-nav__brand">
-                    <img src={"/logo.png"} alt={"Logo"} className={"logo"}/>
+                    <Image src="/logo.png" alt="Logo" className="logo" width={40} height={40} priority />
                 </Link>
                 <div className="erich-nav__links">
                     <Link href="/erich/register" className="erich-nav__link">

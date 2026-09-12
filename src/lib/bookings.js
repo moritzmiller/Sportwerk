@@ -1,5 +1,4 @@
 import { getPaymentMethodLabel as getConfiguredPaymentMethodLabel } from "./payment-methods.js";
-import { calculateGatekeeperFee } from "./fees.js";
 
 export function calculateBookingTotals(price, quantity, discountAmount = 0) {
     const unitPrice = Number(price) || 0;
@@ -7,16 +6,14 @@ export function calculateBookingTotals(price, quantity, discountAmount = 0) {
     const subtotal = unitPrice * normalizedQuantity;
     const normalizedDiscount = Math.min(subtotal, Math.max(0, Number(discountAmount) || 0));
     const discountedSubtotal = subtotal - normalizedDiscount;
-    const serviceFee = calculateGatekeeperFee(discountedSubtotal, normalizedQuantity);
+    const serviceFee = 0;
 
     return {
         unitPrice,
         quantity: normalizedQuantity,
         subtotal,
-        discountAmount: normalizedDiscount,
-        discountedSubtotal,
         serviceFee,
-        totalAmount: discountedSubtotal + serviceFee,
+        totalAmount: discountedSubtotal,
         currency: "EUR",
     };
 }

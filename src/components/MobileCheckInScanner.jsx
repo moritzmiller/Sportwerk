@@ -233,7 +233,7 @@ export default function MobileCheckInScanner({ events }) {
             try {
                 if (!("BarcodeDetector" in window)) {
                     setStatus(
-                        "Dieser Browser unterstuetzt keinen Kamera-QR-Scan. Bitte die Buchungs-ID manuell eingeben."
+                        "Dieser Browser unterstützt keinen Kamera-QR-Scan. Bitte die Buchungs-ID manuell eingeben."
                     );
                     setWarning("");
                     setIsScanning(false);

@@ -14,6 +14,7 @@ export default function AuthForm() {
     });
     const [message, setMessage] = useState("");
     const [resetLink, setResetLink] = useState("");
+    const [resetLinkLabel, setResetLinkLabel] = useState("");
     const [loading, setLoading] = useState(false);
     const [resetCooldown, setResetCooldown] = useState(0);
 
@@ -36,6 +37,7 @@ export default function AuthForm() {
         setLoading(true);
         setMessage("");
         setResetLink("");
+        setResetLinkLabel("");
 
         const endpoint =
             mode === "login"
@@ -87,9 +89,10 @@ export default function AuthForm() {
         if (mode === "forgot") {
             if (data.resetUrl) {
                 setResetLink(data.resetUrl);
+                setResetLinkLabel("Entwicklungslink zum Passwort-Reset öffnen");
                 setMessage(
                     data.message ||
-                        "Mailversand ist lokal nicht verfuegbar. Nutze den Entwicklungslink."
+                        "Mailversand ist lokal nicht verfügbar. Nutze den Entwicklungslink."
                 );
                 return;
             }
@@ -103,6 +106,17 @@ export default function AuthForm() {
         }
 
         if (mode === "register") {
+            if (data.verificationUrl) {
+                setResetLink(data.verificationUrl);
+                setResetLinkLabel("Entwicklungslink zur Kontoaktivierung öffnen");
+                setMessage(
+                    data.message ||
+                        "Mailversand ist lokal nicht verfügbar. Nutze den Entwicklungslink zur Kontoaktivierung."
+                );
+                setMode("login");
+                return;
+            }
+
             setMessage(
                 data.mailSent
                     ? "Registrierung gestartet. Bitte bestätige den Link in deiner E-Mail, danach kannst du dich anmelden."
@@ -125,6 +139,7 @@ export default function AuthForm() {
                         setMode("login");
                         setMessage("");
                         setResetLink("");
+                        setResetLinkLabel("");
                     }}
                     className={`segmented__btn ${mode === "login" ? "is-active" : ""}`}
                 >
@@ -136,6 +151,7 @@ export default function AuthForm() {
                         setMode("register");
                         setMessage("");
                         setResetLink("");
+                        setResetLinkLabel("");
                     }}
                     className={`segmented__btn ${mode === "register" ? "is-active" : ""}`}
                 >
@@ -248,6 +264,7 @@ export default function AuthForm() {
                         setMode("forgot");
                         setMessage("");
                         setResetLink("");
+                        setResetLinkLabel("");
                     }}
                 >
                     Passwort vergessen?
@@ -261,6 +278,7 @@ export default function AuthForm() {
                         setMode("login");
                         setMessage("");
                         setResetLink("");
+                        setResetLinkLabel("");
                     }}
                 >
                     Zurück zur Anmeldung
@@ -269,7 +287,7 @@ export default function AuthForm() {
             {message && <p className="auth-message">{message}</p>}
             {resetLink ? (
                 <a className="auth-link-button" href={resetLink}>
-                    Entwicklungslink zum Passwort-Reset oeffnen
+                    {resetLinkLabel || "Entwicklungslink öffnen"}
                 </a>
             ) : null}
             {mode === "register" ? (

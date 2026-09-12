@@ -20,7 +20,7 @@ export async function POST(request, { params }) {
     const bookingId = String(resolvedParams.id || "").trim();
 
     if (!bookingId) {
-        return Response.json({ error: "Ungultige Buchungs-ID." }, { status: 400 });
+        return Response.json({ error: "Ungültige Buchungs-ID." }, { status: 400 });
     }
 
     const booking = await prisma.booking.findUnique({

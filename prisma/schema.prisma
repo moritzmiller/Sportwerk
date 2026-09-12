@@ -33,7 +33,6 @@ model User {
   eventAuditLogs           EventAuditLog[]          @relation("EventAuditLogActor")
   bookings                 Booking[]                @relation("BookingAttendee")
   checkedInBookings        Booking[]                @relation("BookingCheckInActor")
-  checkedInTickets         Ticket[]                 @relation("TicketCheckInActor")
   bookingScans             BookingScan[]            @relation("BookingScanActor")
   createdScannerLinks      EventScannerLink[]       @relation("ScannerLinkCreator")
   organizations            Organization[]           @relation("OrganizationOwner")
@@ -44,6 +43,9 @@ model User {
   venueReviews             Venue[]                  @relation("VenueReviewActor")
   crmNotes                 CustomerNote[]           @relation("CustomerNoteOrganizer")
   crmTasks                 CustomerTask[]           @relation("CustomerTaskOrganizer")
+  offerCustomers           OfferCustomer[]          @relation("OfferCustomerOwner")
+  offers                   Offer[]                  @relation("OfferOwner")
+  offerCompanyProfile      OfferCompanyProfile?     @relation("OfferCompanyProfileOwner")
   erichRoleAssignments     ErichRoleAssignment[]    @relation("ErichRoleAssignmentUser")
   erichAthletes            ErichAthlete[]           @relation("ErichAthleteAccount")
   erichTrainers            ErichTrainer[]           @relation("ErichTrainerAccount")
@@ -63,10 +65,8 @@ model Event {
   location              String
   city                  String          @default("Dresden")
   category              Category        @default(SONSTIGES)
-  eventType             EventType       @default(STANDARD)
-  eventOptions          Json?
   status                EventStatus     @default(PUBLISHED)
-  allowedPaymentMethods PaymentMethod[] @default([STRIPE, MOLLIE_PAY_BY_BANK, PAYPAL, INVOICE, BANK_TRANSFER])
+  allowedPaymentMethods PaymentMethod[] @default([PAYPAL, STRIPE, INVOICE, BANK_TRANSFER])
   startDate             DateTime
   price                 Float
   capacity              Int?
@@ -83,8 +83,6 @@ model Event {
   venueId               String?
 
   bookings     Booking[]
-  tickets      Ticket[]
-  promoCodes   PromoCode[]
   favorites    EventFavorite[]
   views        EventView[]
   alerts       EventAlert[]
@@ -102,7 +100,6 @@ model Event {
   members      EventMember[]
 
   @@index([ownerId])
-  @@index([eventType, status, startDate])
   @@index([status])
   @@index([startDate])
   @@index([organizationId])
@@ -122,7 +119,6 @@ model Booking {
   currency                  String           @default("EUR")
   unitPrice                 Float
   serviceFee                Float            @default(0)
-  discountAmount            Float            @default(0)
   totalAmount               Float
   billingName               String?
   billingStreet             String?
@@ -144,8 +140,6 @@ model Booking {
   checkedInVia              String?
   ticketTypeId              String?
   ticketTypeName            String?
-  promoCodeId               String?
-  promoCode                 String?
   transferToName            String?
   transferToEmail           String?
   paypalOrderId             String?          @unique
@@ -156,56 +150,19 @@ model Booking {
   stripePaymentIntentId     String?          @unique
   stripeStatus              String?
   providerPayload           Json?
-  registrationData          Json?
   createdAt                 DateTime         @default(now())
   updatedAt                 DateTime         @updatedAt
   event                     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticketType                EventTicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
-  promo                     PromoCode?       @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   attendee                  User?            @relation("BookingAttendee", fields: [attendeeId], references: [id], onDelete: SetNull)
   checkedInBy               User?            @relation("BookingCheckInActor", fields: [checkedInById], references: [id], onDelete: SetNull)
   scanLogs                  BookingScan[]
-  tickets                   Ticket[]
-  payments                  Payment[]
 
   @@index([eventId])
-  @@index([eventId, status, createdAt])
   @@index([attendeeId])
-  @@index([purchaserEmail, createdAt])
   @@index([status])
   @@index([checkedInAt])
   @@index([ticketTypeId])
-  @@index([promoCodeId])
-}
-
-model Ticket {
-  id             String       @id @default(cuid())
-  eventId        Int
-  bookingId      String
-  ticketTypeId   String?
-  ticketTypeName String?
-  ticketNumber   Int
-  holderName     String?
-  status         TicketStatus @default(VALID)
-  checkedInAt    DateTime?
-  checkedInById  String?
-  checkedInVia   String?
-  holderDetails  Json?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  booking     Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  ticketType  EventTicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
-  checkedInBy User?            @relation("TicketCheckInActor", fields: [checkedInById], references: [id], onDelete: SetNull)
-  scanLogs    BookingScan[]
-
-  @@unique([bookingId, ticketNumber])
-  @@index([eventId, status])
-  @@index([eventId, ticketNumber])
-  @@index([bookingId])
-  @@index([ticketTypeId])
-  @@index([checkedInAt])
 }
 
 model EventTicketType {
@@ -225,7 +182,6 @@ model EventTicketType {
 
   event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   bookings Booking[]
-  tickets  Ticket[]
 
   @@index([eventId, sortOrder])
   @@index([eventId, isDefault])
@@ -340,6 +296,95 @@ model CustomerTask {
   organizer User @relation("CustomerTaskOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
 
   @@index([organizerId, customerEmail, completedAt])
+}
+
+model OfferCustomer {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  contact   String?
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner  User    @relation("OfferCustomerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  offers Offer[]
+
+  @@index([ownerId, name])
+  @@index([ownerId, email])
+  @@index([ownerId, createdAt])
+}
+
+model OfferCompanyProfile {
+  id            String   @id @default(cuid())
+  ownerId       String   @unique
+  name          String
+  contact       String?
+  representedBy String?
+  logo          String?
+  email         String?
+  phone         String?
+  address       String?
+  taxId         String?
+  bankName      String?
+  bic           String?
+  accountHolder String?
+  iban          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  owner User @relation("OfferCompanyProfileOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model Offer {
+  id               String              @id @default(cuid())
+  ownerId          String
+  customerId       String?
+  number           String
+  date             DateTime
+  validUntil       DateTime
+  title            String
+  intro            String?
+  note             String?
+  showItemDetails  Boolean             @default(true)
+  adjustmentType   OfferAdjustmentType @default(DISCOUNT)
+  adjustmentValue  Float               @default(0)
+  companySnapshot  Json
+  customerSnapshot Json
+  legalSnapshot    Json
+  totals           Json?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  owner    User           @relation("OfferOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  customer OfferCustomer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items    OfferItem[]
+
+  @@unique([ownerId, number])
+  @@index([ownerId, updatedAt])
+  @@index([ownerId, date])
+  @@index([customerId])
+}
+
+model OfferItem {
+  id          String        @id @default(cuid())
+  offerId     String
+  sortOrder   Int
+  type        OfferItemType
+  title       String
+  description String?
+  quantity    Float         @default(1)
+  unit        String?
+  unitPrice   Float         @default(0)
+  taxRate     Float         @default(19)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([offerId, sortOrder])
 }
 
 model EventFavorite {
@@ -465,7 +510,6 @@ model EventAuditLog {
 model BookingScan {
   id           String   @id @default(cuid())
   bookingId    String?
-  ticketId     String?
   eventId      Int?
   scannerId    String?
   scannerEmail String?
@@ -478,12 +522,10 @@ model BookingScan {
   createdAt    DateTime @default(now())
 
   booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  ticket  Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   event   Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
   scanner User?    @relation("BookingScanActor", fields: [scannerId], references: [id], onDelete: SetNull)
 
   @@index([bookingId, createdAt])
-  @@index([ticketId, createdAt])
   @@index([eventId, createdAt])
   @@index([scannerId, createdAt])
   @@index([status, createdAt])
@@ -1416,160 +1458,11 @@ enum BookingStatus {
   REFUNDED
 }
 
-model PromoCode {
-  id             String    @id @default(cuid())
-  eventId        Int
-  code           String
-  description    String?
-  percentOff     Float?
-  amountOff      Float?
-  maxRedemptions Int?
-  redeemedCount  Int       @default(0)
-  validFrom      DateTime?
-  validUntil     DateTime?
-  active         Boolean   @default(true)
-  ticketTypeIds  String[]  @default([])
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  bookings Booking[]
-
-  @@unique([eventId, code])
-  @@index([eventId, active])
-  @@index([validFrom])
-  @@index([validUntil])
-}
-
-model Payment {
-  id                 String          @id @default(cuid())
-  bookingId          String
-  provider           PaymentProvider
-  providerPaymentId  String?
-  providerCheckoutId String?
-  method             PaymentMethod
-  status             PaymentStatus   @default(PENDING)
-  amountCents        Int
-  currency           String          @default("EUR")
-  idempotencyKey     String          @unique
-  providerPayload    Json?
-  failureCode        String?
-  failureMessage     String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  confirmedAt        DateTime?
-  cancelledAt        DateTime?
-
-  booking       Booking               @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  ledgerEntries PaymentLedgerEntry[]
-  webhookEvents PaymentWebhookEvent[]
-
-  @@unique([provider, providerPaymentId])
-  @@unique([provider, providerCheckoutId])
-  @@index([bookingId, status])
-  @@index([provider, status])
-  @@index([createdAt])
-}
-
-model PaymentLedgerEntry {
-  id            String                 @id @default(cuid())
-  paymentId     String
-  bookingId     String
-  type          PaymentLedgerEntryType
-  direction     LedgerDirection
-  amountCents   Int
-  currency      String                 @default("EUR")
-  referenceType String?
-  referenceId   String?
-  description   String?
-  metadata      Json?
-  createdAt     DateTime               @default(now())
-
-  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-
-  @@index([paymentId, createdAt])
-  @@index([bookingId, createdAt])
-  @@index([type])
-  @@index([referenceType, referenceId])
-}
-
-model PaymentWebhookEvent {
-  id               String          @id @default(cuid())
-  paymentId        String?
-  provider         PaymentProvider
-  providerEventId  String
-  eventType        String
-  status           WebhookStatus   @default(RECEIVED)
-  payload          Json
-  processingResult Json?
-  processedAt      DateTime?
-  createdAt        DateTime        @default(now())
-
-  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-
-  @@unique([provider, providerEventId])
-  @@index([paymentId])
-  @@index([provider, status, createdAt])
-}
-
-enum TicketStatus {
-  VALID
-  CHECKED_IN
-  CANCELLED
-  REFUNDED
-}
-
 enum PaymentMethod {
   PAYPAL
   STRIPE
-  MOLLIE_PAY_BY_BANK
   INVOICE
   BANK_TRANSFER
-}
-
-enum PaymentProvider {
-  STRIPE
-  PAYPAL
-  MOLLIE
-  ADYEN
-  GOCARDLESS
-  MANUAL
-  FREE
-}
-
-enum PaymentStatus {
-  PENDING
-  REQUIRES_ACTION
-  PROCESSING
-  SUCCEEDED
-  FAILED
-  CANCELLED
-  REFUNDED
-  PARTIALLY_REFUNDED
-  CHARGED_BACK
-}
-
-enum PaymentLedgerEntryType {
-  GROSS_PAYMENT
-  PROVIDER_FEE
-  GATEKEEPER_FEE
-  ORGANIZER_NET
-  REFUND
-  REFUND_FEE
-  CHARGEBACK
-  ADJUSTMENT
-}
-
-enum LedgerDirection {
-  CREDIT
-  DEBIT
-}
-
-enum WebhookStatus {
-  RECEIVED
-  PROCESSED
-  IGNORED
-  FAILED
 }
 
 enum Category {
@@ -1591,11 +1484,6 @@ enum EventStatus {
   SOLD_OUT
 }
 
-enum EventType {
-  STANDARD
-  ERICH
-}
-
 enum EventInteractionType {
   VIEW
   CLICK
@@ -1606,6 +1494,18 @@ enum EventInteractionType {
   SHARE
   HIDE
   DWELL
+}
+
+enum OfferAdjustmentType {
+  DISCOUNT
+  SURCHARGE
+}
+
+enum OfferItemType {
+  HEADING
+  SEPARATOR
+  FLAT
+  DETAIL
 }
 
 enum RecommendationPreferenceScope {

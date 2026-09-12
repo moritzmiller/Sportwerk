@@ -5,7 +5,7 @@ import { normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { canManageEvent, canManageOrganization } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { normalizeTicketTypes } from "@/lib/ticket-types";
-import { normalizeAllowedPaymentMethods } from "@/lib/payment-methods";
+import { normalizeEventPaymentMethods } from "@/lib/payment-methods";
 import { canPublishWithOrganization } from "@/lib/verification";
 import {
     isAllowedImageReference,
@@ -166,9 +166,15 @@ export async function PATCH(request, { params }) {
           })
         : null;
     const nextAllowedPaymentMethods =
-        Array.isArray(body.allowedPaymentMethods)
-            ? normalizeAllowedPaymentMethods(body.allowedPaymentMethods)
+        Array.isArray(body.allowedPaymentMethods) || nextTicketTypes
+            ? normalizeEventPaymentMethods(
+                  Array.isArray(body.allowedPaymentMethods)
+                      ? body.allowedPaymentMethods
+                      : event.allowedPaymentMethods,
+                  nextTicketTypes ?? eventWithAccess.ticketTypes
+              )
             : event.allowedPaymentMethods;
+    const nextStartDate = body.startDate ? new Date(body.startDate) : event.startDate;
     const nextImageUrl =
         typeof body.imageUrl === "string"
             ? normalizeSafeText(body.imageUrl, { maxLength: 2 * 1024 * 1024 })
@@ -236,6 +242,13 @@ export async function PATCH(request, { params }) {
     if (nextCapacity !== null && nextCapacity < Number(event.soldTickets || 0)) {
         return Response.json(
             { error: "Kapazitat kann nicht unter die bereits verkauften Tickets gesetzt werden." },
+            { status: 400 }
+        );
+    }
+
+    if (Number.isNaN(nextStartDate.getTime())) {
+        return Response.json(
+            { error: "Bitte ein gültiges Startdatum angeben." },
             { status: 400 }
         );
     }
@@ -336,7 +349,7 @@ export async function PATCH(request, { params }) {
             venueId: nextVenueId === "" ? null : nextVenueId ?? event.venueId,
             status: effectiveStatus,
             allowedPaymentMethods: nextAllowedPaymentMethods,
-            startDate: body.startDate ? new Date(body.startDate) : event.startDate,
+            startDate: nextStartDate,
             price:
                 defaultTicketType?.price ??
                 (Number.isFinite(nextPrice) ? nextPrice : event.price),

@@ -6,7 +6,7 @@ export const metadata = {
 
 export default function ResetPasswordPage() {
     return (
-        <main className="section">
+        <main className="section auth-page">
             <div className="container container-narrow stack-lg text-center">
                 <div className="stack">
                     <span className="eyebrow">Sicherheit</span>

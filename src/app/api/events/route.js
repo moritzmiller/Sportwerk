@@ -6,7 +6,7 @@ import { normalizeEventStatus } from "@/lib/event-management";
 import { normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { notifyMatchingAlerts } from "@/lib/event-alerts";
 import { normalizeTicketTypes } from "@/lib/ticket-types";
-import { normalizeAllowedPaymentMethods } from "@/lib/payment-methods";
+import { normalizeEventPaymentMethods } from "@/lib/payment-methods";
 import { canPublishWithOrganization } from "@/lib/verification";
 import {
     isAllowedDataImage,
@@ -41,9 +41,17 @@ export async function POST(request) {
         throw error;
     }
 
-    if (!body.title || !body.location || !body.startDate) {
+    if (!body.title || !body.imageUrl || !body.location || !body.startDate) {
         return Response.json(
             { error: "Titel, Bild, Location und Startdatum sind erforderlich." },
+            { status: 400 }
+        );
+    }
+
+    const startDate = new Date(body.startDate);
+    if (Number.isNaN(startDate.getTime())) {
+        return Response.json(
+            { error: "Bitte ein gültiges Startdatum angeben." },
             { status: 400 }
         );
     }
@@ -74,7 +82,7 @@ export async function POST(request) {
         quota: capacity,
     });
     const defaultTicketType = ticketTypes.find((ticketType) => ticketType.isDefault) ?? ticketTypes[0];
-    const allowedPaymentMethods = normalizeAllowedPaymentMethods(body.allowedPaymentMethods);
+    const allowedPaymentMethods = normalizeEventPaymentMethods(body.allowedPaymentMethods, ticketTypes);
 
     let organization = null;
     if (organizationId) {
@@ -133,7 +141,7 @@ export async function POST(request) {
             eventOptions,
             status: effectiveStatus,
             allowedPaymentMethods,
-            startDate: new Date(body.startDate),
+            startDate,
             price: defaultTicketType?.price ?? (Number(body.price) || 0),
             capacity,
             publishedAt: effectiveStatus === "PUBLISHED" ? new Date() : null,

@@ -2,6 +2,12 @@ import Stripe from "stripe";
 import { getStripeConfig } from "./env.js";
 
 let stripeClient = null;
+const BOOKING_STRIPE_PAYMENT_METHOD_TYPES = Object.freeze(["card", "sepa_debit"]);
+const ERICH_STRIPE_PAYMENT_METHOD_TYPES = Object.freeze(["card"]);
+
+export function getBookingStripePaymentMethodTypes() {
+    return [...BOOKING_STRIPE_PAYMENT_METHOD_TYPES];
+}
 
 function getStripeClient() {
     const config = getStripeConfig();
@@ -11,9 +17,7 @@ function getStripeClient() {
     }
 
     if (!stripeClient) {
-        stripeClient = new Stripe(config.secretKey, {
-            apiVersion: "2025-12-17.clover",
-        });
+        stripeClient = new Stripe(config.secretKey);
     }
 
     return stripeClient;
@@ -40,8 +44,10 @@ function normalizeSession(session) {
         sessionId: session.id,
         checkoutUrl: session.url,
         paymentIntentId,
+        payment_intent: paymentIntentId,
         status: session.status ?? null,
         paymentStatus: session.payment_status ?? null,
+        payment_status: session.payment_status ?? null,
         raw: session,
     };
 }
@@ -75,7 +81,7 @@ async function createErichStripeCheckoutSession({
     const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.create({
         mode: "payment",
-        payment_method_types: ["card"],
+        payment_method_types: ERICH_STRIPE_PAYMENT_METHOD_TYPES,
         line_items: [
             {
                 quantity: 1,
@@ -130,6 +136,7 @@ async function createBookingStripeCheckoutSession({
     const session = await stripe.checkout.sessions.create(
         {
             mode: "payment",
+            payment_method_types: BOOKING_STRIPE_PAYMENT_METHOD_TYPES,
             customer_email: customerEmail || undefined,
             client_reference_id: String(bookingId),
             success_url: successUrl,

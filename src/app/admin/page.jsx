@@ -201,6 +201,11 @@ export default async function AdminPage() {
                         <strong>Systemstatus</strong>
                         <span>Deployment, PayPal, Mail und Auth-Konfiguration prüfen</span>
                     </Link>
+                    <Link href="/dashboard/tickets/print" className="admin-action">
+                        <span className="admin-action__icon" aria-hidden="true">PRN</span>
+                        <strong>Tickets drucken</strong>
+                        <span>Bezahlte Buchungen als physische Einlasskarten ausgeben</span>
+                    </Link>
                     <Link href="/admin/erich/races" className="admin-action">
                         <span className="admin-action__icon" aria-hidden="true">ERI</span>
                         <strong>ERICH Rennen</strong>

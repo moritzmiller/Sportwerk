@@ -21,7 +21,7 @@ export default function CrmTaskToggle({ taskId, completed }) {
             const data = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                setMessage(data.error || "Aufgabe konnte nicht geÃ¤ndert werden.");
+                setMessage(data.error || "Aufgabe konnte nicht geaendert werden.");
                 return;
             }
         } catch (error) {

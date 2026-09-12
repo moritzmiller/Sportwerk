@@ -5,7 +5,6 @@ import {
     getPaymentMethodOptions,
     normalizeAllowedPaymentMethods,
 } from "@/lib/payment-methods";
-import { calculateGatekeeperFee } from "@/lib/fees";
 import { formatMoney } from "@/lib/bookings";
 
 export default function PaymentMethodSelector({
@@ -13,9 +12,23 @@ export default function PaymentMethodSelector({
     onChange,
     amount = 0,
 }) {
+    const isFreeEvent = Number(amount || 0) <= 0;
     const selected = normalizeAllowedPaymentMethods(value);
     const options = getPaymentMethodOptions(DEFAULT_ALLOWED_PAYMENT_METHODS, amount);
-    const gatekeeperFee = calculateGatekeeperFee(amount, 1);
+
+    if (isFreeEvent) {
+        return (
+            <section className="payment-method-config stack">
+                <div className="section-title-row">
+                    <h3>Zahlungsmittel</h3>
+                    <span className="text-muted">Kostenloses Event</span>
+                </div>
+                <p className="field-hint">
+                    Für kostenlose Tickets ist keine Zahlungsmethode nötig. Buchungen werden direkt als scanbare Tickets abgeschlossen.
+                </p>
+            </section>
+        );
+    }
 
     function toggle(method) {
         const next = selected.includes(method)
@@ -29,7 +42,7 @@ export default function PaymentMethodSelector({
             <div className="section-title-row">
                 <h3>Zahlungsmittel</h3>
                 <span className="text-muted">
-                    GateKeeper-Gebuehr: {formatMoney(gatekeeperFee)}
+                    Keine GateKeeper-Gebuehr
                 </span>
             </div>
             <div className="payment-grid">

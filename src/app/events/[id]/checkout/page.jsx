@@ -180,13 +180,23 @@ async function resolveReturnBooking(searchParams, currentUser) {
 
         try {
             const session = await retrieveStripeCheckoutSession(stripeSessionId);
-            const paymentIntent =
-                typeof session.payment_intent === "string"
-                    ? session.payment_intent
-                    : session.payment_intent?.id ?? booking.stripePaymentIntentId;
+            const paymentIntent = session.paymentIntentId ?? booking.stripePaymentIntentId;
+            const paymentStatus = session.paymentStatus ?? session.payment_status;
 
-            if (session.payment_status !== "paid") {
-                return serializeBooking(booking);
+            if (paymentStatus !== "paid") {
+                const pending = await prisma.booking.update({
+                    where: { id: booking.id },
+                    data: {
+                        paymentProvider: "STRIPE",
+                        stripeCheckoutSessionId: session.id,
+                        stripePaymentIntentId: paymentIntent,
+                        stripeStatus: paymentStatus ?? session.status ?? "pending",
+                        providerPayload: session,
+                    },
+                    include: { event: true },
+                });
+
+                return serializeBooking(pending);
             }
 
             const paidUpdate = await markBookingPaid(prisma, booking, {
@@ -194,7 +204,7 @@ async function resolveReturnBooking(searchParams, currentUser) {
                     paymentProvider: "STRIPE",
                     stripeCheckoutSessionId: session.id,
                     stripePaymentIntentId: paymentIntent,
-                    stripeStatus: session.payment_status ?? session.status ?? "paid",
+                    stripeStatus: paymentStatus ?? session.status ?? "paid",
                     providerPayload: session,
             });
 
@@ -345,7 +355,8 @@ async function SuccessState({ booking }) {
             <div className="checkout-success__badge">Buchung abgeschlossen</div>
             <h2 className="card__title">Deine Buchung ist bestätigt</h2>
             <p className="text-muted">
-                Die Zahlung wurde verarbeitet, dein Ticket ist gesichert und wurde dir per E-Mail zugestellt.
+                Dein Ticket ist gesichert und wurde dir per E-Mail zugestellt. Den QR-Code kannst du
+                auch direkt hier fuer den Einlass verwenden.
             </p>
 
             <div className="ticket-visual card">
@@ -519,16 +530,21 @@ function ClosedState({ eventId, status }) {
 function PendingState({ booking, eventId }) {
     const providerLabel = getPaymentMethodLabel(booking.paymentMethod);
     const approvalUrl = booking.paypalApprovalUrl ?? booking.stripeCheckoutUrl ?? null;
+    const isStripeProcessing =
+        booking.paymentMethod === "STRIPE" &&
+        booking.stripeStatus &&
+        booking.stripeStatus !== "open";
 
     return (
         <section className="card stack-lg">
             <div className="checkout-success__badge booking-status--pending">
-                Zahlung vorbereitet
+                {isStripeProcessing ? "Zahlung wird verarbeitet" : "Zahlung vorbereitet"}
             </div>
             <h2 className="card__title">Deine Buchung wartet auf {providerLabel}</h2>
             <p className="text-muted">
-                Es gibt bereits eine vorbereitete Buchung für diese E-Mail.
-                Du kannst direkt zur bestaetigten Zahlung weitergehen.
+                {isStripeProcessing
+                    ? "Stripe verarbeitet die Zahlung noch. Sobald die Bestätigung eintrifft, wird die Buchung automatisch bezahlt markiert."
+                    : "Es gibt bereits eine vorbereitete Buchung für diese E-Mail. Du kannst direkt zur bestaetigten Zahlung weitergehen."}
             </p>
 
             <div className="checkout-success__summary">
@@ -547,7 +563,7 @@ function PendingState({ booking, eventId }) {
             </div>
 
             <div className="flex wrap">
-                {approvalUrl ? (
+                {approvalUrl && !isStripeProcessing ? (
                     <a href={approvalUrl} className="btn btn-primary">
                         Zu {providerLabel}
                     </a>

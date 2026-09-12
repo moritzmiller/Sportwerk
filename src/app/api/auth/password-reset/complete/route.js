@@ -30,7 +30,7 @@ export async function POST(request) {
 
     const parsed = verifyPasswordResetToken(token);
     if (!parsed.ok) {
-        return inputError("Der Reset-Link ist ungueltig oder abgelaufen.", 401);
+        return inputError("Der Reset-Link ist ungültig oder abgelaufen.", 401);
     }
 
     try {
@@ -44,7 +44,7 @@ export async function POST(request) {
         });
 
         if (!user || user.disabledAt || user.email.toLowerCase() !== parsed.email) {
-            return inputError("Der Reset-Link ist ungueltig oder abgelaufen.", 401);
+            return inputError("Der Reset-Link ist ungültig oder abgelaufen.", 401);
         }
 
         const supabase = createAdminClient();
@@ -65,7 +65,7 @@ export async function POST(request) {
             details: error,
         });
         return Response.json(
-            { error: "Passwort konnte nicht geaendert werden." },
+            { error: "Passwort konnte nicht geändert werden." },
             { status: 503 }
         );
     }

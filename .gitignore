@@ -68,25 +68,8 @@ meetings_archiv.json
 !src/app/api/**/ticket.pdf/**
 *.pkg
 *.csv
-*.zip
-*.7z
-*.rar
-*.tar
-*.tar.gz
-*.tgz
-*.bak
-*.dump
-*.sql.gz
-*.mp4
-*.mov
-*.avi
-*.mkv
-*.wav
-*.psd
-*.ai
-*.sketch
-*.xlsx
-*.xlsm
 
 # vercel
 .vercel
+*.ttf
+*.mp4

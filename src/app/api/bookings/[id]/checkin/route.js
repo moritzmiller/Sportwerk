@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { canCheckInEvent } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { markBookingAndTicketsCheckedIn } from "@/lib/ticket-checkin";
 import { normalizeTicketInput, verifyTicketCode } from "@/lib/tickets";
 
 function normalizeSource(value) {
@@ -71,7 +72,7 @@ export async function POST(request, { params }) {
 
         return Response.json(
             {
-                error: "Ungultiger Ticket-Code.",
+                error: "Ungültiger Ticket-Code.",
                 scan: {
                     id: scan.id,
                     status: scan.status,
@@ -108,7 +109,7 @@ export async function POST(request, { params }) {
 
         return Response.json(
             {
-                error: "Ungultige Buchungs-ID.",
+                error: "Ungültige Buchungs-ID.",
                 scan: {
                     id: scan.id,
                     status: scan.status,
@@ -581,16 +582,10 @@ export async function POST(request, { params }) {
             };
         }
 
-        const updated = await tx.booking.updateMany({
-            where: {
-                id: booking.id,
-                checkedInAt: null,
-            },
-            data: {
-                checkedInAt: new Date(),
-                checkedInById: user.id,
-                checkedInVia: source,
-            },
+        const updated = await markBookingAndTicketsCheckedIn(tx, booking, {
+            now,
+            userId: user.id,
+            via: source,
         });
 
         if (updated.count === 0) {

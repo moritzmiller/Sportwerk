@@ -6,8 +6,15 @@ import {
     requestBodyErrorResponse,
 } from "@/lib/security";
 import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getAppUrl } from "@/lib/env";
-import { isMailNotConfiguredError, passwordResetRedirectTo } from "@/lib/auth-email-links";
+import {
+    getGeneratedAuthActionLink,
+    isAuthEmailRateLimit,
+    isAuthUserNotFoundError,
+    isMailNotConfiguredError,
+    passwordResetRedirectTo,
+} from "@/lib/auth-email-links";
 import { createPasswordResetToken } from "@/lib/password-reset-tokens";
 import { sendPasswordResetEmail } from "@/lib/mail";
 import {
@@ -45,6 +52,25 @@ function developmentResetLinkResponse(resetUrl) {
         message:
             "Mailversand ist lokal nicht konfiguriert. Nutze den Entwicklungslink zum Zuruecksetzen.",
     });
+}
+
+function isSupabaseConfigMissing(error) {
+    return (
+        error?.code === "SUPABASE_PUBLIC_CONFIG_MISSING" ||
+        error?.code === "SUPABASE_ADMIN_CONFIG_MISSING"
+    );
+}
+
+function isSupabaseUnavailable(error) {
+    const text = `${error?.name || ""} ${error?.message || ""}`.toLowerCase();
+    return (
+        error?.name === "AggregateError" ||
+        text.includes("fetch failed") ||
+        text.includes("network") ||
+        text.includes("econnrefused") ||
+        text.includes("enotfound") ||
+        text.includes("etimedout")
+    );
 }
 
 async function findResetMailUser(email) {
@@ -116,11 +142,57 @@ export async function POST(request) {
             return okResponse(false, "gatekeeper");
         }
 
-        const resetToken = createPasswordResetToken({
-            userId: user.id,
-            email: user.email,
-        });
-        const resetUrl = `${passwordResetRedirectTo(getBaseUrl(request))}?token=${encodeURIComponent(resetToken)}`;
+        let resetUrl = "";
+        try {
+            const supabase = createAdminClient();
+            const result = await supabase.auth.admin.generateLink({
+                type: "recovery",
+                email: user.email,
+                options: {
+                    redirectTo: passwordResetRedirectTo(getBaseUrl(request)),
+                },
+            });
+
+            if (result.error) {
+                throw result.error;
+            }
+
+            resetUrl = getGeneratedAuthActionLink(result.data);
+        } catch (error) {
+            if (isAuthUserNotFoundError(error)) {
+                return okResponse(false, "gatekeeper");
+            }
+
+            if (isAuthEmailRateLimit(error)) {
+                return Response.json(
+                    {
+                        error:
+                            "Es wurden zu viele Reset-Links vorbereitet. Bitte warte kurz und versuche es erneut.",
+                        code: "AUTH_EMAIL_RATE_LIMITED",
+                        retryAfterSeconds: 60,
+                    },
+                    { status: 429, headers: { "Retry-After": "60" } }
+                );
+            }
+
+            if (isSupabaseConfigMissing(error) || isSupabaseUnavailable(error)) {
+                throw error;
+            }
+
+            console.warn("[Password reset] Supabase recovery link failed; falling back to signed GateKeeper token:", error);
+        }
+
+        if (!resetUrl && canExposeDevelopmentResetLink()) {
+            const resetToken = createPasswordResetToken({
+                userId: user.id,
+                email: user.email,
+            });
+            resetUrl = `${passwordResetRedirectTo(getBaseUrl(request))}?token=${encodeURIComponent(resetToken)}`;
+        }
+
+        if (!resetUrl) {
+            throw new Error("Supabase recovery link could not be generated.");
+        }
 
         try {
             const mail = await sendPasswordResetEmail(user, resetUrl);
