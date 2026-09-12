@@ -44,6 +44,7 @@ export async function POST(_request, { params }) {
             eventOptions: event.eventOptions,
             status: "DRAFT",
             allowedPaymentMethods: event.allowedPaymentMethods,
+            ticketPrinter: event.ticketPrinter,
             startDate: event.startDate,
             price: event.price,
             capacity: event.capacity,

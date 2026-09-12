@@ -89,6 +89,7 @@ export function serializeBooking(booking) {
                   location: booking.event.location,
                   city: booking.event.city,
                   startDate: toIsoString(booking.event.startDate),
+                  ticketPrinter: booking.event.ticketPrinter ?? null,
               }
             : null,
         tickets: Array.isArray(booking.tickets)

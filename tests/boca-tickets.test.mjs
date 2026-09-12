@@ -5,6 +5,7 @@ import {
     buildBocaFgl,
     buildBocaFilename,
     buildBocaTicketRecords,
+    getBocaLayoutProfile,
 } from "../src/lib/boca-tickets.js";
 
 process.env.TICKET_QR_SECRET = "ticket-secret-with-at-least-24-chars";
@@ -21,6 +22,7 @@ const booking = {
         location: "Halle 1",
         city: "Koln",
         startDate: "2026-08-31T18:30:00.000Z",
+        ticketPrinter: "BOCA_LEMUR",
     },
 };
 
@@ -31,6 +33,8 @@ test("buildBocaTicketRecords creates one physical ticket per booking quantity", 
     assert.equal(records[0].copy, 1);
     assert.equal(records[1].copy, 2);
     assert.equal(records[0].copies, 2);
+    assert.equal(records[0].layoutName, "BOCA_LEMUR_2X5");
+    assert.equal(records[0].ticketPrinter, "BOCA_LEMUR");
     assert.match(records[0].ticketCode, /^gk1\.booking_123\./);
 });
 
@@ -56,6 +60,11 @@ test("buildBocaFgl contains BOCA command text, ticket data, and qr payload", () 
     assert.match(fgl, /VIP Spezial 1\/2/);
     assert.match(fgl, /gk1\.booking_123\./);
     assert.equal((fgl.match(/<p>/g) ?? []).length, 2);
+});
+
+test("getBocaLayoutProfile falls back to the Boca layout for unknown values", () => {
+    assert.equal(getBocaLayoutProfile("BOCA_LEMUR").name, "BOCA_LEMUR_2X5");
+    assert.equal(getBocaLayoutProfile("unknown").name, "BOCA_LEMUR_2X5");
 });
 
 test("buildBocaFilename keeps download names stable and safe", () => {

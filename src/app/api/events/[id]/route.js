@@ -5,6 +5,7 @@ import { normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { canManageEvent, canManageOrganization } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { normalizeTicketTypes } from "@/lib/ticket-types";
+import { normalizeTicketPrinter } from "@/lib/ticket-printers";
 import { normalizeEventPaymentMethods } from "@/lib/payment-methods";
 import { canPublishWithOrganization } from "@/lib/verification";
 import {
@@ -72,6 +73,7 @@ export async function GET(_request, { params }) {
             eventOptions: event.eventOptions,
             status: event.status,
             allowedPaymentMethods: event.allowedPaymentMethods,
+            ticketPrinter: normalizeTicketPrinter(event.ticketPrinter),
             startDate: event.startDate,
             price: event.price,
             capacity: event.capacity,
@@ -153,6 +155,10 @@ export async function PATCH(request, { params }) {
         typeof body.eventOptions === "object"
             ? normalizeEventOptions(nextEventType, body.eventOptions)
             : normalizeEventOptions(nextEventType, event.eventOptions);
+    const nextTicketPrinter =
+        typeof body.ticketPrinter === "string"
+            ? normalizeTicketPrinter(body.ticketPrinter)
+            : normalizeTicketPrinter(event.ticketPrinter);
     const nextCapacity = normalizeCapacity(body.capacity);
     const nextPrice = Number(body.price);
     const nextOrganizationId =
@@ -349,6 +355,7 @@ export async function PATCH(request, { params }) {
             venueId: nextVenueId === "" ? null : nextVenueId ?? event.venueId,
             status: effectiveStatus,
             allowedPaymentMethods: nextAllowedPaymentMethods,
+            ticketPrinter: nextTicketPrinter,
             startDate: nextStartDate,
             price:
                 defaultTicketType?.price ??
@@ -378,6 +385,7 @@ export async function PATCH(request, { params }) {
                 organizationId: updated.organizationId,
                 venueId: updated.venueId,
                 allowedPaymentMethods: updated.allowedPaymentMethods,
+                ticketPrinter: updated.ticketPrinter,
                 eventType: updated.eventType,
                 publishBlocked,
             },

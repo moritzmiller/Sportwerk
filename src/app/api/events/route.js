@@ -6,6 +6,7 @@ import { normalizeEventStatus } from "@/lib/event-management";
 import { normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { notifyMatchingAlerts } from "@/lib/event-alerts";
 import { normalizeTicketTypes } from "@/lib/ticket-types";
+import { normalizeTicketPrinter } from "@/lib/ticket-printers";
 import { normalizeEventPaymentMethods } from "@/lib/payment-methods";
 import { canPublishWithOrganization } from "@/lib/verification";
 import {
@@ -83,6 +84,7 @@ export async function POST(request) {
     });
     const defaultTicketType = ticketTypes.find((ticketType) => ticketType.isDefault) ?? ticketTypes[0];
     const allowedPaymentMethods = normalizeEventPaymentMethods(body.allowedPaymentMethods, ticketTypes);
+    const ticketPrinter = normalizeTicketPrinter(body.ticketPrinter);
 
     let organization = null;
     if (organizationId) {
@@ -141,6 +143,7 @@ export async function POST(request) {
             eventOptions,
             status: effectiveStatus,
             allowedPaymentMethods,
+            ticketPrinter,
             startDate,
             price: defaultTicketType?.price ?? (Number(body.price) || 0),
             capacity,
@@ -177,6 +180,7 @@ export async function POST(request) {
                 capacity: event.capacity,
                 organizationId: event.organizationId,
                 allowedPaymentMethods,
+                ticketPrinter,
                 eventType,
                 publishBlocked,
                 organizationVerificationStatus: organization?.verificationStatus ?? null,

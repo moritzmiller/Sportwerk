@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { serializeBooking } from "@/lib/bookings";
 import { buildBocaFgl, buildBocaFilename } from "@/lib/boca-tickets";
-import { getBookingAccessWhere } from "@/lib/permissions";
+import { getBookingAccessWhere, getEventAccessWhere } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { isBocaTicketPrinter } from "@/lib/ticket-printers";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +41,34 @@ export async function GET(request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const eventId = searchParams.get("eventId") || "all";
+    const eventIdParam = searchParams.get("eventId") || "all";
+    const eventId = eventIdParam === "all" ? "all" : Number(eventIdParam);
     const search = searchParams.get("search") || "";
+
+    if (eventId !== "all" && Number.isNaN(eventId)) {
+        return NextResponse.json({ error: "Ungueltige Event-ID." }, { status: 400 });
+    }
+
+    if (eventId !== "all") {
+        const event = await prisma.event.findFirst({
+            where: {
+                ...getEventAccessWhere(user),
+                id: eventId,
+            },
+            select: { ticketPrinter: true },
+        });
+
+        if (!event) {
+            return NextResponse.json({ error: "Event nicht gefunden." }, { status: 404 });
+        }
+
+        if (!isBocaTicketPrinter(event.ticketPrinter)) {
+            return NextResponse.json(
+                { error: "Dieses Event ist nicht fuer BOCA-Ticketdruck konfiguriert." },
+                { status: 400 }
+            );
+        }
+    }
 
     const rawBookings = await prisma.booking.findMany({
         where: {
@@ -58,12 +85,17 @@ export async function GET(request) {
                     location: true,
                     city: true,
                     startDate: true,
+                    ticketPrinter: true,
                 },
             },
         },
     });
 
-    const bookings = rawBookings.map(serializeBooking).filter((booking) => matchesSearch(booking, search));
+    const bookings = rawBookings
+        .map(serializeBooking)
+        .filter((booking) => matchesSearch(booking, search))
+        .filter((booking) => isBocaTicketPrinter(booking.event?.ticketPrinter));
+
     const body = buildBocaFgl(bookings);
     const filename = buildBocaFilename({ eventId, search });
 

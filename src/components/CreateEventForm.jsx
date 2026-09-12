@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CATEGORIES } from "@/lib/categories";
 import ImageCropper from "@/components/ImageCropper";
 import PaymentMethodSelector from "@/components/PaymentMethodSelector";
+import TicketPrinterSelector from "@/components/TicketPrinterSelector";
 import TicketTypeEditor from "@/components/TicketTypeEditor";
 import { EVENT_TYPES, normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 
@@ -34,6 +35,7 @@ const EMPTY = {
         },
     ],
     allowedPaymentMethods: ["STRIPE", "MOLLIE_PAY_BY_BANK", "PAYPAL", "INVOICE", "BANK_TRANSFER"],
+    ticketPrinter: "BROWSER",
 };
 const MAX_IMAGE_BYTES = 1500 * 1024;
 
@@ -270,6 +272,13 @@ export default function CreateEventForm({ organizations = [] }) {
                 amount={paymentEstimateAmount}
                 onChange={(allowedPaymentMethods) =>
                     setForm((current) => ({ ...current, allowedPaymentMethods }))
+                }
+            />
+
+            <TicketPrinterSelector
+                value={form.ticketPrinter}
+                onChange={(ticketPrinter) =>
+                    setForm((current) => ({ ...current, ticketPrinter }))
                 }
             />
 

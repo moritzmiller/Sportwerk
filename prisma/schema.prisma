@@ -67,6 +67,7 @@ model Event {
   category              Category        @default(SONSTIGES)
   status                EventStatus     @default(PUBLISHED)
   allowedPaymentMethods PaymentMethod[] @default([PAYPAL, STRIPE, INVOICE, BANK_TRANSFER])
+  ticketPrinter         String          @default("BROWSER")
   startDate             DateTime
   price                 Float
   capacity              Int?

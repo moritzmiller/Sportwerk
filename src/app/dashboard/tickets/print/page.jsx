@@ -9,6 +9,7 @@ import { formatMoney, serializeBooking } from "@/lib/bookings";
 import { getBookingAccessWhere, getEventAccessWhere } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createTicketCode } from "@/lib/tickets";
+import { getTicketPrinterOption, isBocaTicketPrinter } from "@/lib/ticket-printers";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,7 @@ export default async function PhysicalTicketPrintPage({ searchParams }) {
                 id: true,
                 title: true,
                 startDate: true,
+                ticketPrinter: true,
             },
         }),
         prisma.booking.findMany({
@@ -103,6 +105,7 @@ export default async function PhysicalTicketPrintPage({ searchParams }) {
                         location: true,
                         city: true,
                         startDate: true,
+                        ticketPrinter: true,
                     },
                 },
             },
@@ -113,6 +116,9 @@ export default async function PhysicalTicketPrintPage({ searchParams }) {
     const tickets = await buildPrintableTickets(bookings);
     const totalTicketCount = bookings.reduce((sum, booking) => sum + Number(booking.quantity || 0), 0);
     const selectedEvent = events.find((event) => event.id === eventId) ?? null;
+    const selectedPrinter = getTicketPrinterOption(selectedEvent?.ticketPrinter);
+    const bocaBookings = bookings.filter((booking) => isBocaTicketPrinter(booking.event?.ticketPrinter));
+    const bocaTicketCount = bocaBookings.reduce((sum, booking) => sum + Number(booking.quantity || 0), 0);
     const bocaParams = new URLSearchParams();
     bocaParams.set("eventId", eventId);
     if (search) bocaParams.set("search", search);
@@ -204,17 +210,17 @@ export default async function PhysicalTicketPrintPage({ searchParams }) {
                         <span className="eyebrow">BOCA Drucker</span>
                         <h2 id="boca-print-title">Spezielle Tickets als BOCA-Datei</h2>
                         <p className="text-muted">
-                            Lade die gefilterten bezahlten Tickets als FGL-Rohdaten fuer BOCA-Ticketdrucker herunter.
+                            Druckerprofil: {selectedEvent ? selectedPrinter.label : "BOCA-konfigurierte Events"}.
                         </p>
                     </div>
                     <div className="boca-print-panel__summary">
-                        <strong>{totalTicketCount}</strong>
+                        <strong>{bocaTicketCount}</strong>
                         <span>Ticket-Drucksaetze</span>
                     </div>
                     <a
-                        className={`btn btn-primary ${totalTicketCount === 0 ? "is-disabled" : ""}`}
+                        className={`btn btn-primary ${bocaTicketCount === 0 ? "is-disabled" : ""}`}
                         href={bocaDownloadHref}
-                        aria-disabled={totalTicketCount === 0}
+                        aria-disabled={bocaTicketCount === 0}
                     >
                         BOCA-Datei herunterladen
                     </a>

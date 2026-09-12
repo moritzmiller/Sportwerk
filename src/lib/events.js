@@ -1,5 +1,6 @@
 import { serializeTicketType } from "./ticket-types.js";
 import { normalizeEventOptions, normalizeEventType } from "./event-options.js";
+import { normalizeTicketPrinter } from "./ticket-printers.js";
 
 function toIsoString(value) {
     if (!value) return null;
@@ -20,6 +21,7 @@ export function serializeEvent(event) {
         eventOptions: normalizeEventOptions(event.eventType, event.eventOptions),
         status: event.status ?? "PUBLISHED",
         allowedPaymentMethods: event.allowedPaymentMethods ?? null,
+        ticketPrinter: normalizeTicketPrinter(event.ticketPrinter),
         startDate: toIsoString(event.startDate),
         price: event.price,
         capacity: event.capacity ?? null,

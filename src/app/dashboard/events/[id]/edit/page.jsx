@@ -32,6 +32,7 @@ export default async function EditEventPage({ params }) {
             eventOptions: true,
             status: true,
             allowedPaymentMethods: true,
+            ticketPrinter: true,
             startDate: true,
             price: true,
             capacity: true,

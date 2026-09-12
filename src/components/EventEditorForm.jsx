@@ -6,6 +6,7 @@ import { useState } from "react";
 import { CATEGORIES } from "@/lib/categories";
 import ImageCropper from "@/components/ImageCropper";
 import PaymentMethodSelector from "@/components/PaymentMethodSelector";
+import TicketPrinterSelector from "@/components/TicketPrinterSelector";
 import TicketTypeEditor from "@/components/TicketTypeEditor";
 import { EVENT_TYPES, normalizeEventOptions, normalizeEventType } from "@/lib/event-options";
 import { DEFAULT_ALLOWED_PAYMENT_METHODS } from "@/lib/payment-methods";
@@ -42,6 +43,7 @@ function toFormValue(event) {
                 },
             ],
             allowedPaymentMethods: [...DEFAULT_ALLOWED_PAYMENT_METHODS],
+            ticketPrinter: "BROWSER",
         };
     }
 
@@ -95,6 +97,7 @@ function toFormValue(event) {
             event.allowedPaymentMethods?.length > 0
                 ? event.allowedPaymentMethods
                 : [...DEFAULT_ALLOWED_PAYMENT_METHODS],
+        ticketPrinter: event.ticketPrinter ?? "BROWSER",
     };
 }
 
@@ -402,6 +405,11 @@ export default function EventEditorForm({ event, organizations = [] }) {
                         }
                     />
                 </div>
+
+                <TicketPrinterSelector
+                    value={form.ticketPrinter}
+                    onChange={(ticketPrinter) => updateField("ticketPrinter", ticketPrinter)}
+                />
 
                 {organizations.length > 0 ? (
                     <div className="field checkout-form__wide">
