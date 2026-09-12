@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import QRCode from "qrcode";
-import PDFDocument from "pdfkit";
-import { createIndividualTicketCode, createTicketCode } from "./tickets.js";
+import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
+import { createTicketCode } from "./tickets.js";
 import { getAppUrl, getMailConfig } from "./env.js";
 import { logSystemEvent } from "./system-events.js";
 
@@ -50,15 +50,12 @@ function getSmtpTransporter() {
     });
 }
 
-function buildFrom(label = "GateKeeper") {
-    const from = process.env.EMAIL_FROM?.trim();
+function buildFrom(label = "Gatekeeper") {
+    const from = process.env.EMAIL_FROM;
     if (!from) {
         throw new MailDeliveryError("EMAIL_FROM is missing.", {
             code: "MAIL_FROM_MISSING",
         });
-    }
-    if (/^[^<>]+<[^<>]+>$/.test(from)) {
-        return from;
     }
     return `"${label}" <${from}>`;
 }
@@ -75,6 +72,7 @@ async function sendViaResend(message) {
             to: [message.to],
             subject: message.subject,
             html: message.html,
+            reply_to: message.replyTo,
             attachments: message.attachments?.map((attachment) => ({
                 filename: attachment.filename,
                 content:
@@ -95,7 +93,7 @@ async function sendViaResend(message) {
     }
 }
 
-export async function sendTransactionalMail({ fromLabel = "GateKeeper", ...message }) {
+export async function sendTransactionalMail({ fromLabel = "Gatekeeper", ...message }) {
     const providers = getConfiguredMailProviders();
 
     if (providers.length === 0) {
@@ -155,8 +153,218 @@ function getAppOrigin() {
     return getAppUrl();
 }
 
+function formatCurrency(value) {
+    return Number(value || 0).toLocaleString("de-DE", {
+        style: "currency",
+        currency: "EUR",
+    });
+}
+
+function formatEventDate(value) {
+    if (!value) return "Siehe Eventseite";
+    return new Date(value).toLocaleString("de-DE", {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function mailParagraph(content, style = "") {
+    return `<p style="margin:0 0 16px; font-size:16px; line-height:1.58; color:#292929; ${style}">${content}</p>`;
+}
+
+function mailButton({ href, label, tone = "primary" }) {
+    const colors = {
+        primary: { background: "#C8FF2E", color: "#111111", border: "#C8FF2E" },
+        success: { background: "#111111", color: "#F7F7F3", border: "#111111" },
+        warning: { background: "#292929", color: "#F7F7F3", border: "#292929" },
+        danger: { background: "#111111", color: "#F7F7F3", border: "#111111" },
+    };
+    const theme = colors[tone] || colors.primary;
+    return `
+        <a href="${escapeHtml(href)}" style="display:inline-block; margin:4px 0 18px; padding:14px 20px; border:1px solid ${theme.border}; border-radius:6px; background:${theme.background}; color:${theme.color}; text-decoration:none; font-size:15px; font-weight:700;">
+            ${escapeHtml(label)}
+        </a>
+    `;
+}
+
+function fallbackLink(url) {
+    const safeUrl = escapeHtml(url);
+    return `
+        <p style="margin:8px 0 0; font-size:13px; line-height:1.5; color:#64645f;">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:</p>
+        <p style="margin:6px 0 0; font-size:13px; line-height:1.5; color:#111111; word-break:break-all;">${safeUrl}</p>
+    `;
+}
+
+function detailRows(rows) {
+    return rows
+        .filter((row) => row?.value !== undefined && row?.value !== null && String(row.value).length > 0)
+        .map(
+            ({ label, value }) => `
+                <tr>
+                    <td style="padding:9px 0; color:#111111; font-size:14px; line-height:1.4; vertical-align:top;">
+                        <div style="margin:0 0 4px; color:#64645f; font-size:12px; line-height:1.3;">${escapeHtml(label)}</div>
+                        <div style="font-weight:700; word-break:break-word; overflow-wrap:anywhere;">${escapeHtml(value)}</div>
+                    </td>
+                </tr>
+            `
+        )
+        .join("");
+}
+
+function infoCard({ label, title, rows = [], body = "", tone = "default" }) {
+    const tones = {
+        default: { border: "#D8D8D2", background: "#F7F7F3", label: "#111111", marker: "#C8FF2E" },
+        neutral: { border: "#D8D8D2", background: "#F7F7F3", label: "#111111", marker: "#D8D8D2" },
+        success: { border: "#D8D8D2", background: "#F7F7F3", label: "#111111", marker: "#C8FF2E" },
+        warning: { border: "#E6A52E", background: "#F7F7F3", label: "#111111", marker: "#E6A52E" },
+        danger: { border: "#D94343", background: "#F7F7F3", label: "#111111", marker: "#D94343" },
+    };
+    const theme = tones[tone] || tones.default;
+    const rowHtml = rows.length
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; margin-top:10px;">${detailRows(rows)}</table>`
+        : "";
+
+    return `
+        <div style="margin:22px 0; padding:18px; border:1px solid ${theme.border}; border-left:6px solid ${theme.marker}; border-radius:10px; background:${theme.background};">
+            ${label ? `<div style="font-size:12px; font-weight:800; color:${theme.label}; text-transform:uppercase; letter-spacing:0;">${escapeHtml(label)}</div>` : ""}
+            ${title ? `<h2 style="margin:6px 0 0; font-family:Arial, Helvetica, sans-serif; font-size:22px; line-height:1.18; color:#111111;">${escapeHtml(title)}</h2>` : ""}
+            ${body ? `<div style="margin-top:10px; font-size:14px; line-height:1.6; color:#292929;">${body}</div>` : ""}
+            ${rowHtml}
+        </div>
+    `;
+}
+
+function nextSteps(items) {
+    return `
+        <div style="margin:22px 0 6px;">
+            <div style="font-size:12px; font-weight:800; color:#111111; text-transform:uppercase; letter-spacing:0;">N&auml;chste Schritte</div>
+            <ol style="margin:10px 0 0 20px; padding:0; color:#292929; font-size:14px; line-height:1.65;">
+                ${items.map((item) => `<li style="padding-left:4px;">${item}</li>`).join("")}
+            </ol>
+        </div>
+    `;
+}
+
+function customerMailLayout({ eyebrow = "Gatekeeper", title, preheader, children, footerReason = "" }) {
+    return `
+        <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">${escapeHtml(preheader || title)}</div>
+        <div style="margin:0; padding:0; background:#D8D8D2; font-family:Arial, Helvetica, sans-serif; color:#111111;">
+            <div style="max-width:660px; margin:0 auto; padding:28px 14px;">
+                <div style="background:#F7F7F3; border:1px solid #111111; border-radius:10px; overflow:hidden;">
+                    <div style="padding:28px 28px 22px; background:#111111; color:#F7F7F3;">
+                        <div style="width:72px; height:8px; background:#C8FF2E; margin:0 0 22px;"></div>
+                        <div style="font-size:13px; font-weight:800; letter-spacing:0; text-transform:uppercase;">${escapeHtml(eyebrow)}</div>
+                        <h1 style="margin:12px 0 0; font-family:Arial, Helvetica, sans-serif; font-size:32px; line-height:1.08; letter-spacing:0;">${escapeHtml(title)}</h1>
+                    </div>
+                    <div style="padding:28px;">
+                        ${children}
+                    </div>
+                </div>
+                <p style="margin:18px 8px 0; color:#64645f; font-size:12px; line-height:1.55;">${footerReason || "Du bekommst diese Mail als transaktionale Gatekeeper-Nachricht."}</p>
+            </div>
+        </div>
+    `;
+}
+
+function bookingRows(booking, extraRows = []) {
+    return [
+        { label: "Event", value: booking.event?.title || "Event" },
+        { label: "Datum", value: formatEventDate(booking.event?.startDate) },
+        { label: "Ort", value: [booking.event?.location, booking.event?.city].filter(Boolean).join(", ") || "Siehe Eventseite" },
+        { label: "Tickets", value: `${booking.quantity || 1}x${booking.ticketTypeName ? ` ${booking.ticketTypeName}` : ""}` },
+        { label: "Buchung", value: `#${booking.id}` },
+        ...extraRows,
+    ];
+}
+
+function paymentInstructionCard(paymentDetails, booking, intro) {
+    if (paymentDetails.paymentMethod === "BANK_TRANSFER") {
+        return infoCard({
+            label: "Zahlungsdaten",
+            title: "Bank&uuml;berweisung",
+            tone: "neutral",
+            body: intro ? `<p style="margin:0 0 10px;">${intro}</p>` : "",
+            rows: [
+                { label: "Kontoinhaber", value: paymentDetails.accountHolder || "Gatekeeper" },
+                { label: "IBAN", value: paymentDetails.iban || "Noch nicht konfiguriert" },
+                { label: "BIC", value: paymentDetails.bic || "Noch nicht konfiguriert" },
+                { label: "Verwendungszweck", value: paymentDetails.paymentReference },
+            ],
+        });
+    }
+
+    return infoCard({
+        label: "Rechnung",
+        title: "Bitte mit Referenz &uuml;berweisen",
+        tone: "warning",
+        body: `<p style="margin:0;">${intro || "Die Rechnung wurde f&uuml;r diese Buchung erstellt. Bitte &uuml;berweise den offenen Betrag unter Angabe der Zahlungsreferenz."}</p>`,
+        rows: [
+            {
+                label: "Rechnungsadresse",
+                value: `${booking.billingName || booking.purchaserName}, ${booking.billingStreet || "-"}, ${booking.billingPostalCode || "-"} ${booking.billingCity || "-"}`,
+            },
+        ],
+    });
+}
+
+export async function sendContactRequestEmail(contactRequest) {
+    const recipient = process.env.CONTACT_EMAIL || process.env.EMAIL_FROM;
+    if (!recipient) {
+        throw new MailDeliveryError("CONTACT_EMAIL or EMAIL_FROM is missing.", {
+            code: "CONTACT_RECIPIENT_MISSING",
+        });
+    }
+
+    const topicLabels = {
+        booking: "Buchung",
+        organizer: "Veranstalter",
+        privacy: "Datenschutz",
+        technical: "Technisches Problem",
+        legal: "Rechtliches",
+        general: "Allgemeine Anfrage",
+    };
+    const topic = topicLabels[contactRequest.topic] || "Allgemeine Anfrage";
+    const bookingNumber = contactRequest.bookingNumber
+        ? escapeHtml(contactRequest.bookingNumber)
+        : "Nicht angegeben";
+
+    const emailHtml = customerMailLayout({
+        eyebrow: "Gatekeeper Kontakt",
+        title: "Neue Kontaktanfrage",
+        preheader: `${topic} von ${contactRequest.name || contactRequest.email}`,
+        footerReason: "Diese interne Nachricht wurde \u00fcber das Gatekeeper-Kontaktformular ausgel\u00f6st.",
+        children: `
+            ${infoCard({
+                label: "Anfrage",
+                title: topic,
+                rows: [
+                    { label: "Name", value: contactRequest.name },
+                    { label: "E-Mail", value: contactRequest.email },
+                    { label: "Buchungsnummer", value: bookingNumber },
+                ],
+            })}
+            <div style="margin:22px 0 0; padding:18px; border:1px solid #D8D8D2; border-radius:10px; background:#F7F7F3;">
+                <div style="font-size:12px; font-weight:800; color:#111111; text-transform:uppercase; letter-spacing:0;">Nachricht</div>
+                <div style="margin-top:10px; white-space:pre-wrap; font-size:15px; line-height:1.65; color:#292929;">${escapeHtml(contactRequest.message)}</div>
+            </div>
+        `,
+    });
+
+    return await sendTransactionalMail({
+        fromLabel: "Gatekeeper Kontakt",
+        to: recipient,
+        replyTo: contactRequest.email,
+        subject: `Kontaktanfrage: ${topic}`,
+        html: emailHtml,
+    });
+}
+
 // Hilfsfunktion zur Erstellung des PDF-Tickets im Speicher
-function generateTicketPDF(booking, qrCodeDataUrl, ticketCode) {
+export function generateTicketPDF(booking, qrCodeDataUrl, ticketCode) {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ size: "A6", margin: 20 }); // Kompakteres Ticket-Format
         let buffers = [];
@@ -170,7 +378,7 @@ function generateTicketPDF(booking, qrCodeDataUrl, ticketCode) {
 
         // --- PDF DESIGN ---
         // Rahmen & Header
-        doc.rect(10, 10, doc.page.width - 20, doc.page.height - 20).stroke("#e2e8f0");
+        doc.rect(10, 10, doc.page.width - 20, doc.page.height - 20).stroke("#D8D8D2");
 
         doc.fillColor("#3b82f6").fontSize(10).font("Helvetica-Bold").text("GATEKEEPER E-TICKET", 20, 25);
         doc.fillColor("#64748b").fontSize(8).font("Helvetica").text(`# ${booking.id}`, doc.page.width - 80, 25, { align: "right", width: 60 });
@@ -216,123 +424,83 @@ function generateTicketPDF(booking, qrCodeDataUrl, ticketCode) {
 
 export async function sendRegistrationWelcomeEmail(user) {
     const appOrigin = getAppOrigin();
-    const name = escapeHtml(user.name || "du");
     const loginUrl = `${appOrigin}/auth`;
 
-    const emailHtml = `
-        <div style="margin:0; padding:0; background:#eef6f2; font-family: Arial, Helvetica, sans-serif; color:#241d18;">
-            <div style="max-width:640px; margin:0 auto; padding:28px 16px;">
-                <div style="background:#fffdf8; border:1px solid rgba(36,29,24,0.10); border-radius:16px; overflow:hidden; box-shadow:0 18px 44px rgba(36,29,24,0.08);">
-                    <div style="padding:28px 28px 18px; background:linear-gradient(135deg, #0f766e 0%, #355c7d 58%, #e85d3f 100%); color:#ffffff;">
-                        <div style="font-size:13px; font-weight:700; letter-spacing:0; text-transform:uppercase; opacity:0.86;">GateKeeper</div>
-                        <h1 style="margin:12px 0 0; font-family: Georgia, 'Times New Roman', serif; font-size:34px; line-height:1.02; letter-spacing:0;">Willkommen bei GateKeeper</h1>
-                    </div>
-
-                    <div style="padding:28px;">
-                        <p style="margin:0 0 16px; font-size:16px; line-height:1.6;">Hallo ${name},</p>
-                        <p style="margin:0 0 18px; font-size:16px; line-height:1.6;">dein Konto wurde erstellt und ist sofort einsatzbereit. Du kannst dich jetzt anmelden, Events entdecken und deine Tickets verwalten.</p>
-
-                        <div style="margin:22px 0; padding:18px; border:1px solid rgba(15,118,110,0.18); border-radius:12px; background:#e9f7f1;">
-                            <div style="font-size:12px; font-weight:800; color:#0f766e; text-transform:uppercase;">Konto</div>
-                            <div style="margin-top:6px; font-size:15px; color:#3f4a45;">${escapeHtml(user.email)}</div>
-                        </div>
-
-                        <a href="${loginUrl}" style="display:inline-block; margin:4px 0 18px; padding:13px 18px; border-radius:12px; background:#e85d3f; color:#ffffff; text-decoration:none; font-weight:800;">Jetzt anmelden</a>
-
-                        <p style="margin:12px 0 0; font-size:14px; line-height:1.6; color:#51615b;">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:</p>
-                        <p style="margin:6px 0 0; font-size:13px; line-height:1.5; color:#0f766e; word-break:break-all;">${loginUrl}</p>
-                    </div>
-                </div>
-
-                <p style="margin:18px 8px 0; color:#51615b; font-size:12px; line-height:1.5;">Du bekommst diese Mail, weil mit dieser E-Mail-Adresse ein GateKeeper-Konto erstellt wurde.</p>
-            </div>
-        </div>
-    `;
+    const emailHtml = customerMailLayout({
+        title: "Willkommen bei Gatekeeper",
+        preheader: "Dein Konto ist bereit. Melde dich an und verwalte deine Tickets.",
+        footerReason: "Du bekommst diese Mail, weil mit dieser E-Mail-Adresse ein Gatekeeper-Konto erstellt wurde.",
+        children: `
+            ${mailParagraph(`Hallo ${escapeHtml(user.name || "du")},`)}
+            ${mailParagraph("dein Konto ist bereit. In deinem Dashboard findest du Buchungen, Tickets und gespeicherte Events an einem Ort.")}
+            ${infoCard({
+                label: "Konto",
+                title: user.email,
+                tone: "success",
+                body: "<p style=\"margin:0;\">Melde dich an, um deine Gatekeeper-Aktivit\u00e4ten zu verwalten.</p>",
+            })}
+            ${mailButton({ href: loginUrl, label: "Zum Dashboard", tone: "success" })}
+            ${fallbackLink(loginUrl)}
+        `,
+    });
 
     await sendTransactionalMail({
-        fromLabel: "GateKeeper",
+        fromLabel: "Gatekeeper",
         to: user.email,
-        subject: "Willkommen bei GateKeeper",
+        subject: "Willkommen bei Gatekeeper",
         html: emailHtml,
     });
 }
 
 export async function sendAccountVerificationEmail(user, verificationUrl) {
-    const name = escapeHtml(user.name || "du");
-    const safeVerificationUrl = escapeHtml(verificationUrl);
-
-    const emailHtml = `
-        <div style="margin:0; padding:0; background:#eef6f2; font-family: Arial, Helvetica, sans-serif; color:#241d18;">
-            <div style="max-width:640px; margin:0 auto; padding:28px 16px;">
-                <div style="background:#fffdf8; border:1px solid rgba(36,29,24,0.10); border-radius:16px; overflow:hidden; box-shadow:0 18px 44px rgba(36,29,24,0.08);">
-                    <div style="padding:28px 28px 18px; background:linear-gradient(135deg, #0f766e 0%, #355c7d 58%, #e85d3f 100%); color:#ffffff;">
-                        <div style="font-size:13px; font-weight:700; letter-spacing:0; text-transform:uppercase; opacity:0.86;">GateKeeper</div>
-                        <h1 style="margin:12px 0 0; font-family: Georgia, 'Times New Roman', serif; font-size:34px; line-height:1.02; letter-spacing:0;">E-Mail bestätigen</h1>
-                    </div>
-
-                    <div style="padding:28px;">
-                        <p style="margin:0 0 16px; font-size:16px; line-height:1.6;">Hallo ${name},</p>
-                        <p style="margin:0 0 18px; font-size:16px; line-height:1.6;">bestätige deine E-Mail-Adresse, um dein GateKeeper-Konto zu aktivieren. Danach kannst du dich anmelden.</p>
-
-                        <a href="${safeVerificationUrl}" style="display:inline-block; margin:8px 0 20px; padding:13px 18px; border-radius:12px; background:#e85d3f; color:#ffffff; text-decoration:none; font-weight:800;">Konto aktivieren</a>
-
-                        <div style="margin:8px 0 0; padding:16px; border:1px solid rgba(15,118,110,0.18); border-radius:12px; background:#e9f7f1;">
-                            <div style="font-size:12px; font-weight:800; color:#0f766e; text-transform:uppercase;">Warum diese Mail?</div>
-                            <p style="margin:8px 0 0; font-size:14px; line-height:1.6; color:#3f4a45;">GateKeeper aktiviert neue Konten erst nach bestätigter E-Mail-Adresse.</p>
-                        </div>
-
-                        <p style="margin:18px 0 0; font-size:14px; line-height:1.6; color:#51615b;">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:</p>
-                        <p style="margin:6px 0 0; font-size:13px; line-height:1.5; color:#0f766e; word-break:break-all;">${safeVerificationUrl}</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    const emailHtml = customerMailLayout({
+        eyebrow: "Gatekeeper Sicherheit",
+        title: "E-Mail best\u00e4tigen",
+        preheader: "Ein Klick aktiviert dein Gatekeeper-Konto.",
+        children: `
+            ${mailParagraph(`Hallo ${escapeHtml(user.name || "du")},`)}
+            ${mailParagraph("best\u00e4tige deine E-Mail-Adresse, um dein Gatekeeper-Konto zu aktivieren. Danach kannst du dich anmelden und Buchungen verwalten.")}
+            ${mailButton({ href: verificationUrl, label: "Konto aktivieren", tone: "primary" })}
+            ${infoCard({
+                label: "Warum diese Mail?",
+                title: "Schutz f\u00fcr dein Konto",
+                body: "<p style=\"margin:0;\">Gatekeeper aktiviert neue Konten erst nach best\u00e4tigter E-Mail-Adresse.</p>",
+            })}
+            ${fallbackLink(verificationUrl)}
+        `,
+    });
 
     return await sendTransactionalMail({
-        fromLabel: "GateKeeper Sicherheit",
+        fromLabel: "Gatekeeper Sicherheit",
         to: user.email,
-        subject: "GateKeeper Konto aktivieren",
+        subject: "Gatekeeper Konto aktivieren",
         html: emailHtml,
     });
 }
 
 export async function sendPasswordResetEmail(user, resetUrl) {
-    const name = escapeHtml(user.name || "du");
-    const safeResetUrl = escapeHtml(resetUrl);
-
-    const emailHtml = `
-        <div style="margin:0; padding:0; background:#eef6f2; font-family: Arial, Helvetica, sans-serif; color:#241d18;">
-            <div style="max-width:640px; margin:0 auto; padding:28px 16px;">
-                <div style="background:#fffdf8; border:1px solid rgba(36,29,24,0.10); border-radius:16px; overflow:hidden; box-shadow:0 18px 44px rgba(36,29,24,0.08);">
-                    <div style="padding:28px 28px 18px; background:linear-gradient(135deg, #0f766e 0%, #355c7d 58%, #e85d3f 100%); color:#ffffff;">
-                        <div style="font-size:13px; font-weight:700; letter-spacing:0; text-transform:uppercase; opacity:0.86;">GateKeeper</div>
-                        <h1 style="margin:12px 0 0; font-family: Georgia, 'Times New Roman', serif; font-size:34px; line-height:1.02; letter-spacing:0;">Passwort zurücksetzen</h1>
-                    </div>
-
-                    <div style="padding:28px;">
-                        <p style="margin:0 0 16px; font-size:16px; line-height:1.6;">Hallo ${name},</p>
-                        <p style="margin:0 0 18px; font-size:16px; line-height:1.6;">für dein GateKeeper-Konto wurde ein neues Passwort angefordert. Wenn du das warst, kannst du jetzt ein neues Passwort setzen.</p>
-
-                        <a href="${safeResetUrl}" style="display:inline-block; margin:8px 0 20px; padding:13px 18px; border-radius:12px; background:#e85d3f; color:#ffffff; text-decoration:none; font-weight:800;">Neues Passwort setzen</a>
-
-                        <div style="margin:8px 0 0; padding:16px; border:1px solid rgba(15,118,110,0.18); border-radius:12px; background:#e9f7f1;">
-                            <div style="font-size:12px; font-weight:800; color:#0f766e; text-transform:uppercase;">Sicherheit</div>
-                            <p style="margin:8px 0 0; font-size:14px; line-height:1.6; color:#3f4a45;">Wenn du diese Anfrage nicht gestellt hast, kannst du diese Mail ignorieren. Dein bisheriges Passwort bleibt dann unverändert.</p>
-                        </div>
-
-                        <p style="margin:18px 0 0; font-size:14px; line-height:1.6; color:#51615b;">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:</p>
-                        <p style="margin:6px 0 0; font-size:13px; line-height:1.5; color:#0f766e; word-break:break-all;">${safeResetUrl}</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    const emailHtml = customerMailLayout({
+        eyebrow: "Gatekeeper Sicherheit",
+        title: "Passwort zur\u00fccksetzen",
+        preheader: "Setze dein Passwort zur\u00fcck. Wenn du das nicht warst, kannst du die Mail ignorieren.",
+        children: `
+            ${mailParagraph(`Hallo ${escapeHtml(user.name || "du")},`)}
+            ${mailParagraph("f\u00fcr dein Gatekeeper-Konto wurde ein neues Passwort angefordert. Wenn du das warst, kannst du jetzt ein neues Passwort setzen.")}
+            ${mailButton({ href: resetUrl, label: "Neues Passwort setzen", tone: "primary" })}
+            ${infoCard({
+                label: "Sicherheit",
+                title: "Nicht angefordert?",
+                tone: "warning",
+                body: "<p style=\"margin:0;\">Dann kannst du diese Mail ignorieren. Dein bisheriges Passwort bleibt unver\u00e4ndert.</p>",
+            })}
+            ${fallbackLink(resetUrl)}
+        `,
+    });
 
     return await sendTransactionalMail({
-        fromLabel: "GateKeeper Sicherheit",
+        fromLabel: "Gatekeeper Sicherheit",
         to: user.email,
-        subject: "GateKeeper Passwort zurücksetzen",
+        subject: "Gatekeeper Passwort zur\u00fccksetzen",
         html: emailHtml,
     });
 }
@@ -340,65 +508,43 @@ export async function sendPasswordResetEmail(user, resetUrl) {
 // Hauptfunktion zum E-Mail-Versand
 export async function sendTicketEmail(booking) {
     try {
-        // 1. QR-Code für E-Mail und PDF generieren
-        const ticketRecords = Array.isArray(booking.tickets) && booking.tickets.length > 0
-            ? booking.tickets
-            : [{ id: booking.id, ticketNumber: 1, legacy: true }];
-        const ticketCodes = ticketRecords.map((ticket) => ({
-            ...ticket,
-            code: ticket.legacy
-                ? createTicketCode(booking.id)
-                : createIndividualTicketCode(ticket.id),
-        }));
-        const ticketCode = ticketCodes[0].code;
+        // 1. QR-Code f\u00fcr E-Mail und PDF generieren
+        const ticketCode = createTicketCode(booking.id);
         const qrCodeDataUrl = await QRCode.toDataURL(ticketCode);
 
         // 2. PDF im Buffer generieren
         const pdfBuffer = await generateTicketPDF(booking, qrCodeDataUrl, ticketCode);
 
-        // 3. HTML-Body für die Mail definieren
-        const emailHtml = `
-            <div style="font-family: sans-serif; padding: 20px; color: #1e293b; max-width: 600px; margin: 0 auto; border: 1px solid #f1f5f9; border-radius: 8px;">
-                <h2 style="color: #3b82f6;">Hallo ${booking.purchaserName},</h2>
-                <p>deine Zahlung war erfolgreich! Dein Ticket für das Event ist hiermit fest gebucht.</p>
-                
-                <div style="background-color: #f8fafc; border: 1px dashed #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
-                    <span style="font-size: 0.8rem; font-weight: bold; color: #3b82f6; letter-spacing: 0.05em; display: block; margin-bottom: 5px;">BESTÄTIGTE BUCHUNG</span>
-                    <h3 style="margin: 0 0 15px 0; font-size: 1.4rem; color: #1e293b;">${booking.event?.title}</h3>
-                    
-                    <p style="margin: 5px 0;"><strong>Anzahl:</strong> ${booking.quantity}x Ticket(s)</p>
-                    ${
-                        booking.ticketTypeName
-                            ? `<p style="margin: 5px 0;"><strong>Tickettyp:</strong> ${booking.ticketTypeName}</p>`
-                            : ""
-                    }
-                    <p style="margin: 5px 0;"><strong>Buchungs-ID:</strong> #${booking.id}</p>
-                    <p style="margin: 5px 0; font-size: 0.85rem;"><strong>Ticket-Code:</strong> ${ticketCode}</p>
-                    ${
-                        ticketCodes.length > 1
-                            ? `<p style="margin: 5px 0; font-size: 0.85rem;"><strong>Weitere Ticket-Codes:</strong><br>${ticketCodes
-                                  .slice(1)
-                                  .map((ticket) => `#${ticket.ticketNumber}: ${ticket.code}`)
-                                  .join("<br>")}</p>`
-                            : ""
-                    }
-                    
-                    <div style="margin: 20px 0;">
-                        <img src="${qrCodeDataUrl}" alt="QR-Code Einlass" width="140" height="140" style="border: 1px solid #e2e8f0; padding: 5px; background: #fff;" />
-                    </div>
-                    <span style="font-size: 0.8rem; color: #64748b;">Du kannst den QR-Code direkt aus dieser Mail oder dem angehängten PDF-Ticket am Einlass scannen lassen.</span>
+        const dashboardUrl = `${getAppOrigin()}/dashboard`;
+        const emailHtml = customerMailLayout({
+            eyebrow: "Gatekeeper Tickets",
+            title: "Deine Tickets sind best\u00e4tigt",
+            preheader: `${booking.event?.title || "Dein Event"} ist gebucht. QR-Code und PDF-Ticket sind bereit.`,
+            footerReason: "Du bekommst diese Mail, weil du \u00fcber Gatekeeper ein Ticket gebucht hast.",
+            children: `
+                ${mailParagraph(`Hallo ${escapeHtml(booking.purchaserName || "du")},`)}
+                ${mailParagraph(`deine Zahlung ist eingegangen. Deine Buchung f\u00fcr <strong>${escapeHtml(booking.event?.title || "das Event")}</strong> ist best\u00e4tigt.`)}
+                ${infoCard({
+                    label: "Best\u00e4tigte Buchung",
+                    title: booking.event?.title || "Event",
+                    tone: "success",
+                    rows: bookingRows(booking, [{ label: "Ticket-Code", value: ticketCode }]),
+                })}
+                <div style="margin:22px 0; text-align:center; padding:20px; border:1px solid #D8D8D2; border-radius:10px; background:#F7F7F3;">
+                    <div style="font-size:12px; font-weight:800; color:#111111; text-transform:uppercase;">Einlass</div>
+                    <img src="${qrCodeDataUrl}" alt="QR-Code Einlass" width="156" height="156" style="display:block; width:156px; height:156px; margin:12px auto; border:1px solid #D8D8D2; padding:6px; background:#F7F7F3;" />
+                    <p style="margin:0; font-size:14px; line-height:1.55; color:#292929;">Zeige diesen QR-Code am Einlass auf deinem Smartphone vor. Das druckfertige PDF-Ticket h\u00e4ngt zus\u00e4tzlich an dieser E-Mail.</p>
                 </div>
-                
-                <p>Dein Ticket findest du zusätzlich als druckfertiges <strong>PDF im Anhang</strong> dieser E-Mail.</p>
-                <p style="margin-top: 30px; font-size: 0.9rem; color: #94a3b8;">Dein GateKeeper Team</p>
-            </div>
-        `;
+                ${mailButton({ href: dashboardUrl, label: "Buchungen \u00f6ffnen", tone: "success" })}
+                ${fallbackLink(dashboardUrl)}
+            `,
+        });
 
         // 4. E-Mail absenden
         await sendTransactionalMail({
-            fromLabel: "GateKeeper Tickets",
+            fromLabel: "Gatekeeper Tickets",
             to: booking.purchaserEmail,
-            subject: `Deine Tickets für ${booking.event?.title} (#${booking.id})`,
+            subject: `Deine Tickets f\u00fcr ${booking.event?.title} (#${booking.id})`,
             html: emailHtml,
             attachments: [
                 {
@@ -419,52 +565,42 @@ export async function sendManualPaymentEmail(booking, paymentDetails) {
         const subjectPrefix =
             paymentDetails.paymentMethod === "INVOICE"
                 ? "Rechnung"
-                : "Banküberweisung";
+                : "Bank\u00fcberweisung";
 
-        const emailHtml = `
-            <div style="font-family: sans-serif; padding: 20px; color: #1e293b; max-width: 640px; margin: 0 auto; border: 1px solid #f1f5f9; border-radius: 8px;">
-                <h2 style="color: #3b82f6;">Hallo ${booking.purchaserName},</h2>
-                <p>deine Buchung für <strong>${booking.event?.title || "das Event"}</strong> ist eingegangen. Die Zahlung ist noch offen und wartet auf ${subjectPrefix.toLowerCase()}.</p>
-
-                <div style="background-color: #f8fafc; border: 1px dashed #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0 0 8px 0;"><strong>Buchungs-ID:</strong> #${booking.id}</p>
-                    ${
-                        booking.ticketTypeName
-                            ? `<p style="margin: 0 0 8px 0;"><strong>Tickettyp:</strong> ${booking.ticketTypeName}</p>`
-                            : ""
-                    }
-                    <p style="margin: 0 0 8px 0;"><strong>Zahlungsreferenz:</strong> ${paymentDetails.paymentReference}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Betrag:</strong> ${Number(booking.totalAmount).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</p>
-                    <p style="margin: 0;"><strong>Fällig bis:</strong> ${paymentDetails.dueDate}</p>
-                </div>
-
-                ${
-                    paymentDetails.paymentMethod === "BANK_TRANSFER"
-                        ? `
-                <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <h3 style="margin-top: 0; color: #1d4ed8;">Banküberweisung</h3>
-                    <p style="margin: 6px 0;"><strong>Kontoinhaber:</strong> ${paymentDetails.accountHolder || "GateKeeper"}</p>
-                    <p style="margin: 6px 0;"><strong>IBAN:</strong> ${paymentDetails.iban || "Noch nicht konfiguriert"}</p>
-                    <p style="margin: 6px 0;"><strong>BIC:</strong> ${paymentDetails.bic || "Noch nicht konfiguriert"}</p>
-                    <p style="margin: 6px 0;"><strong>Verwendungszweck:</strong> ${paymentDetails.paymentReference}</p>
-                </div>`
-                        : `
-                <div style="background-color: #fefce8; border: 1px solid #fde68a; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <h3 style="margin-top: 0; color: #a16207;">Rechnung</h3>
-                    <p style="margin: 6px 0;">Die Rechnung wurde für diese Buchung erstellt. Bitte überweise den offenen Betrag unter Angabe der Zahlungsreferenz.</p>
-                    <p style="margin: 6px 0;"><strong>Rechnungsadresse:</strong> ${booking.billingName || booking.purchaserName}, ${booking.billingStreet || "—"}, ${booking.billingPostalCode || "—"} ${booking.billingCity || "—"}</p>
-                </div>`
-                }
-
-                <p>Sobald die Zahlung eingeht, wird dein Ticket im Konto freigeschaltet und du erhältst die Bestätigungsmail.</p>
-                <p style="margin-top: 30px; font-size: 0.9rem; color: #94a3b8;">Dein GateKeeper Team</p>
-            </div>
-        `;
+        const dashboardUrl = `${getAppOrigin()}/dashboard`;
+        const emailHtml = customerMailLayout({
+            eyebrow: "Gatekeeper Zahlung",
+            title: "Deine Buchung wartet auf Zahlung",
+            preheader: `Bitte nutze die Zahlungsreferenz ${paymentDetails.paymentReference}, damit dein Ticket freigeschaltet werden kann.`,
+            footerReason: "Du bekommst diese Mail, weil du eine Gatekeeper-Buchung mit manueller Zahlung gestartet hast.",
+            children: `
+                ${mailParagraph(`Hallo ${escapeHtml(booking.purchaserName || "du")},`)}
+                ${mailParagraph(`deine Buchung f\u00fcr <strong>${escapeHtml(booking.event?.title || "das Event")}</strong> ist eingegangen. Sobald die Zahlung zugeordnet ist, wird dein Ticket freigeschaltet.`)}
+                ${infoCard({
+                    label: "Offene Zahlung",
+                    title: subjectPrefix,
+                    tone: "warning",
+                    rows: bookingRows(booking, [
+                        { label: "Betrag", value: formatCurrency(booking.totalAmount) },
+                        { label: "F\u00e4llig bis", value: paymentDetails.dueDate },
+                        { label: "Zahlungsreferenz", value: paymentDetails.paymentReference },
+                    ]),
+                })}
+                ${paymentInstructionCard(paymentDetails, booking, "Bitte \u00fcberweise den offenen Betrag mit exakt dieser Referenz, damit die Zahlung automatisch zugeordnet werden kann.")}
+                ${nextSteps([
+                    "Zahlung mit der angegebenen Referenz ausf\u00fchren.",
+                    "Best\u00e4tigungsmail abwarten. Danach ist dein Ticket im Dashboard verf\u00fcgbar.",
+                    "Bei R\u00fcckfragen die Buchungsnummer bereithalten.",
+                ])}
+                ${mailButton({ href: dashboardUrl, label: "Buchung ansehen", tone: "warning" })}
+                ${fallbackLink(dashboardUrl)}
+            `,
+        });
 
         await sendTransactionalMail({
-            fromLabel: "GateKeeper Tickets",
+            fromLabel: "Gatekeeper Tickets",
             to: booking.purchaserEmail,
-            subject: `Deine ${subjectPrefix}-Buchung für ${booking.event?.title || "GateKeeper"}`,
+            subject: `Deine ${subjectPrefix}-Buchung f\u00fcr ${booking.event?.title || "Gatekeeper"}`,
             html: emailHtml,
         });
     } catch (error) {
@@ -478,53 +614,37 @@ export async function sendPaymentReminderEmail(booking, paymentDetails, reminder
         const subjectPrefix =
             paymentDetails.paymentMethod === "INVOICE"
                 ? "Rechnung"
-                : "Banküberweisung";
+                : "Bank\u00fcberweisung";
 
-        const emailHtml = `
-            <div style="font-family: sans-serif; padding: 20px; color: #1e293b; max-width: 640px; margin: 0 auto; border: 1px solid #f1f5f9; border-radius: 8px;">
-                <h2 style="color: #dc2626;">Hallo ${booking.purchaserName},</h2>
-                <p>für deine Buchung <strong>${booking.event?.title || "das Event"}</strong> ist noch eine Zahlung offen. Das ist eine freundliche Erinnerung, damit deine Plätze nicht verloren gehen.</p>
-
-                <div style="background-color: #f8fafc; border: 1px dashed #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0 0 8px 0;"><strong>Buchungs-ID:</strong> #${booking.id}</p>
-                    ${
-                        booking.ticketTypeName
-                            ? `<p style="margin: 0 0 8px 0;"><strong>Tickettyp:</strong> ${booking.ticketTypeName}</p>`
-                            : ""
-                    }
-                    <p style="margin: 0 0 8px 0;"><strong>Zahlungsreferenz:</strong> ${paymentDetails.paymentReference}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Betrag:</strong> ${Number(booking.totalAmount).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</p>
-                    <p style="margin: 0;"><strong>Fällig bis:</strong> ${paymentDetails.dueDate}</p>
-                    <p style="margin: 8px 0 0 0;"><strong>Erinnerung:</strong> ${reminderState.reminderCount + 1}. Versand</p>
-                </div>
-
-                ${
-                    paymentDetails.paymentMethod === "BANK_TRANSFER"
-                        ? `
-                <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <h3 style="margin-top: 0; color: #1d4ed8;">Banküberweisung</h3>
-                    <p style="margin: 6px 0;"><strong>Kontoinhaber:</strong> ${paymentDetails.accountHolder || "GateKeeper"}</p>
-                    <p style="margin: 6px 0;"><strong>IBAN:</strong> ${paymentDetails.iban || "Noch nicht konfiguriert"}</p>
-                    <p style="margin: 6px 0;"><strong>BIC:</strong> ${paymentDetails.bic || "Noch nicht konfiguriert"}</p>
-                    <p style="margin: 6px 0;"><strong>Verwendungszweck:</strong> ${paymentDetails.paymentReference}</p>
-                </div>`
-                        : `
-                <div style="background-color: #fefce8; border: 1px solid #fde68a; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <h3 style="margin-top: 0; color: #a16207;">Rechnung</h3>
-                    <p style="margin: 6px 0;">Bitte begleiche die offene Rechnung unter Angabe der Zahlungsreferenz.</p>
-                    <p style="margin: 6px 0;"><strong>Rechnungsadresse:</strong> ${booking.billingName || booking.purchaserName}, ${booking.billingStreet || "—"}, ${booking.billingPostalCode || "—"} ${booking.billingCity || "—"}</p>
-                </div>`
-                }
-
-                <p>Sobald die Zahlung eingeht, wird dein Ticket freigeschaltet und du erhältst die Bestätigungsmail.</p>
-                <p style="margin-top: 30px; font-size: 0.9rem; color: #94a3b8;">Dein GateKeeper Team</p>
-            </div>
-        `;
+        const dashboardUrl = `${getAppOrigin()}/dashboard`;
+        const emailHtml = customerMailLayout({
+            eyebrow: "Gatekeeper Zahlung",
+            title: "Zahlung noch offen",
+            preheader: `Erinnerung ${reminderState.reminderCount + 1}: Deine Buchung wartet noch auf Zahlung.`,
+            footerReason: "Du bekommst diese Mail, weil f\u00fcr deine Gatekeeper-Buchung noch eine Zahlung offen ist.",
+            children: `
+                ${mailParagraph(`Hallo ${escapeHtml(booking.purchaserName || "du")},`)}
+                ${mailParagraph(`f\u00fcr deine Buchung <strong>${escapeHtml(booking.event?.title || "das Event")}</strong> ist noch eine Zahlung offen. Bitte begleiche sie rechtzeitig, damit deine Pl\u00e4tze nicht verloren gehen.`)}
+                ${infoCard({
+                    label: `Erinnerung ${reminderState.reminderCount + 1}`,
+                    title: subjectPrefix,
+                    tone: "warning",
+                    rows: bookingRows(booking, [
+                        { label: "Betrag", value: formatCurrency(booking.totalAmount) },
+                        { label: "F\u00e4llig bis", value: paymentDetails.dueDate },
+                        { label: "Zahlungsreferenz", value: paymentDetails.paymentReference },
+                    ]),
+                })}
+                ${paymentInstructionCard(paymentDetails, booking, "Falls du bereits gezahlt hast, kann die Zuordnung je nach Banklaufzeit etwas dauern. Wichtig ist die korrekte Zahlungsreferenz.")}
+                ${mailButton({ href: dashboardUrl, label: "Buchung pr\u00fcfen", tone: "warning" })}
+                ${fallbackLink(dashboardUrl)}
+            `,
+        });
 
         await sendTransactionalMail({
-            fromLabel: "GateKeeper Tickets",
+            fromLabel: "Gatekeeper Tickets",
             to: booking.purchaserEmail,
-            subject: `Erinnerung: ${subjectPrefix}-Buchung für ${booking.event?.title || "GateKeeper"}`,
+            subject: `Erinnerung: ${subjectPrefix}-Buchung f\u00fcr ${booking.event?.title || "Gatekeeper"}`,
             html: emailHtml,
         });
     } catch (error) {
@@ -538,34 +658,36 @@ export async function sendPaymentCancellationEmail(booking, paymentDetails, reas
         const subjectPrefix =
             paymentDetails.paymentMethod === "INVOICE"
                 ? "Rechnung"
-                : "Banküberweisung";
+                : "Bank\u00fcberweisung";
 
-        const emailHtml = `
-            <div style="font-family: sans-serif; padding: 20px; color: #1e293b; max-width: 640px; margin: 0 auto; border: 1px solid #f1f5f9; border-radius: 8px;">
-                <h2 style="color: #b91c1c;">Hallo ${booking.purchaserName},</h2>
-                <p>deine Buchung <strong>${booking.event?.title || "das Event"}</strong> wurde automatisch storniert, weil die Zahlung nicht rechtzeitig eingegangen ist.</p>
-
-                <div style="background-color: #f8fafc; border: 1px dashed #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0 0 8px 0;"><strong>Buchungs-ID:</strong> #${booking.id}</p>
-                    ${
-                        booking.ticketTypeName
-                            ? `<p style="margin: 0 0 8px 0;"><strong>Tickettyp:</strong> ${booking.ticketTypeName}</p>`
-                            : ""
-                    }
-                    <p style="margin: 0 0 8px 0;"><strong>Zahlungsreferenz:</strong> ${paymentDetails.paymentReference}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Status:</strong> Storniert</p>
-                    <p style="margin: 0;"><strong>Grund:</strong> ${reason}</p>
-                </div>
-
-                <p>Wenn du das Event weiterhin besuchen möchtest, kannst du eine neue Buchung anlegen, sofern noch Plätze verfügbar sind.</p>
-                <p style="margin-top: 30px; font-size: 0.9rem; color: #94a3b8;">Dein GateKeeper Team</p>
-            </div>
-        `;
+        const eventUrl = booking.event?.id ? `${getAppOrigin()}/events/${booking.event.id}` : getAppOrigin();
+        const emailHtml = customerMailLayout({
+            eyebrow: "Gatekeeper Zahlung",
+            title: "Buchung storniert",
+            preheader: "Deine Buchung wurde storniert, weil die Zahlung nicht rechtzeitig eingegangen ist.",
+            footerReason: "Du bekommst diese Mail als Statusinformation zu deiner Gatekeeper-Buchung.",
+            children: `
+                ${mailParagraph(`Hallo ${escapeHtml(booking.purchaserName || "du")},`)}
+                ${mailParagraph(`deine Buchung f\u00fcr <strong>${escapeHtml(booking.event?.title || "das Event")}</strong> wurde storniert, weil die Zahlung nicht rechtzeitig eingegangen ist.`)}
+                ${infoCard({
+                    label: "Status",
+                    title: "Storniert",
+                    tone: "danger",
+                    rows: bookingRows(booking, [
+                        { label: "Zahlungsreferenz", value: paymentDetails.paymentReference },
+                        { label: "Grund", value: reason },
+                    ]),
+                })}
+                ${mailParagraph("Wenn du das Event weiterhin besuchen m\u00f6chtest, kannst du eine neue Buchung anlegen, sofern noch Pl\u00e4tze verf\u00fcgbar sind.")}
+                ${mailButton({ href: eventUrl, label: "Event ansehen", tone: "danger" })}
+                ${fallbackLink(eventUrl)}
+            `,
+        });
 
         await sendTransactionalMail({
-            fromLabel: "GateKeeper Tickets",
+            fromLabel: "Gatekeeper Tickets",
             to: booking.purchaserEmail,
-            subject: `Buchung storniert: ${subjectPrefix} für ${booking.event?.title || "GateKeeper"}`,
+            subject: `Buchung storniert: ${subjectPrefix} f\u00fcr ${booking.event?.title || "Gatekeeper"}`,
             html: emailHtml,
         });
     } catch (error) {
@@ -580,32 +702,30 @@ export async function sendEventAlertEmail(alert, event) {
         if (event.city) subjectParts.push(event.city);
         subjectParts.push(event.title);
 
-        const emailHtml = `
-            <div style="font-family: sans-serif; padding: 20px; color: #1e293b; max-width: 640px; margin: 0 auto; border: 1px solid #f1f5f9; border-radius: 8px;">
-                <h2 style="color: #3b82f6;">Ein neues Event passt zu deinem Alert</h2>
-                <p>Du bekommst diese Nachricht, weil du bei GateKeeper einen Suchalarm gespeichert hast.</p>
-
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0 0 8px 0;"><strong>Event:</strong> ${event.title}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Ort:</strong> ${event.location}, ${event.city}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Datum:</strong> ${new Date(event.startDate).toLocaleString("de-DE", {
-                        weekday: "long",
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                    })}</p>
-                    <p style="margin: 0;"><strong>Suchfilter:</strong> ${alert.query || alert.city || alert.category || "allgemein"}</p>
-                </div>
-
-                <p>Wenn du magst, kannst du das Event direkt in GateKeeper ansehen und speichern.</p>
-                <p style="margin-top: 30px; font-size: 0.9rem; color: #94a3b8;">Dein GateKeeper Team</p>
-            </div>
-        `;
+        const eventUrl = event.id ? `${getAppOrigin()}/events/${event.id}` : getAppOrigin();
+        const emailHtml = customerMailLayout({
+            eyebrow: "Gatekeeper Events",
+            title: "Neues Event gefunden",
+            preheader: `${event.title} passt zu deinem Gatekeeper-Suchalarm.`,
+            footerReason: "Du bekommst diese Mail, weil du bei Gatekeeper einen Suchalarm gespeichert hast.",
+            children: `
+                ${mailParagraph("Dein Suchalarm hat ein neues Event gefunden. Hier sind die wichtigsten Daten auf einen Blick.")}
+                ${infoCard({
+                    label: "Event-Alert",
+                    title: event.title,
+                    rows: [
+                        { label: "Datum", value: formatEventDate(event.startDate) },
+                        { label: "Ort", value: [event.location, event.city].filter(Boolean).join(", ") || "Siehe Eventseite" },
+                        { label: "Suchfilter", value: alert.query || alert.city || alert.category || "allgemein" },
+                    ],
+                })}
+                ${mailButton({ href: eventUrl, label: "Event ansehen", tone: "primary" })}
+                ${fallbackLink(eventUrl)}
+            `,
+        });
 
         await sendTransactionalMail({
-            fromLabel: "GateKeeper Events",
+            fromLabel: "Gatekeeper Events",
             to: alert.user?.email,
             subject: subjectParts.filter(Boolean).join(" - "),
             html: emailHtml,
