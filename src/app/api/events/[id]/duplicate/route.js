@@ -51,6 +51,7 @@ export async function POST(_request, { params }) {
             ownerId: user.id,
             organizationId: event.organizationId,
             venueId: event.venueId,
+            seatingPlanId: event.seatingPlanId,
             duplicateOfId: event.id,
         },
     });

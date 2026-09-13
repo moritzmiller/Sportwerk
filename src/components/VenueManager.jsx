@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { buildSimpleBlockLayout } from "@/lib/seating-plans";
 
 const EMPTY_CREATE = {
     organizationId: "",
@@ -12,6 +13,17 @@ const EMPTY_CREATE = {
     notes: "",
 };
 
+const EMPTY_SEATING_PLAN = {
+    organizationId: "",
+    venueId: "",
+    name: "",
+    description: "",
+    sectionName: "Block A",
+    rowPrefix: "",
+    rowCount: "10",
+    seatsPerRow: "20",
+};
+
 function mapOrganizations(initialOrganizations = []) {
     return initialOrganizations.map((organization) => ({
         ...organization,
@@ -19,6 +31,7 @@ function mapOrganizations(initialOrganizations = []) {
         venues: (organization.venues || []).map((venue) => ({
             ...venue,
             events: venue.events || [],
+            seatingPlans: venue.seatingPlans || [],
             draftName: venue.name ?? "",
             draftAddress: venue.address ?? "",
             draftCity: venue.city ?? "",
@@ -47,12 +60,17 @@ export default function VenueManager({ initialOrganizations = [] }) {
     const router = useRouter();
     const [organizations, setOrganizations] = useState(() => mapOrganizations(initialOrganizations));
     const [createForm, setCreateForm] = useState(EMPTY_CREATE);
+    const [seatingPlanForm, setSeatingPlanForm] = useState(EMPTY_SEATING_PLAN);
     const [search, setSearch] = useState("");
     const [selectedOrgId, setSelectedOrgId] = useState("all");
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(false);
 
     const orgById = useMemo(() => new Map(organizations.map((org) => [org.id, org])), [organizations]);
+    const availableSeatingVenues = useMemo(() => {
+        const organization = orgById.get(seatingPlanForm.organizationId);
+        return organization?.venues ?? [];
+    }, [orgById, seatingPlanForm.organizationId]);
 
     const allVenues = useMemo(
         () =>
@@ -135,6 +153,16 @@ export default function VenueManager({ initialOrganizations = [] }) {
         setCreateForm((current) => ({ ...current, [field]: value }));
     }
 
+    function updateSeatingPlanForm(field, value) {
+        setSeatingPlanForm((current) => {
+            if (field === "organizationId") {
+                return { ...current, organizationId: value, venueId: "" };
+            }
+
+            return { ...current, [field]: value };
+        });
+    }
+
     async function createVenue(event) {
         event.preventDefault();
         if (!createForm.organizationId || !createForm.name.trim()) return;
@@ -164,6 +192,7 @@ export default function VenueManager({ initialOrganizations = [] }) {
                               {
                                   ...data.venue,
                                   events: data.venue.events || [],
+                                  seatingPlans: data.venue.seatingPlans || [],
                                   draftName: data.venue.name ?? "",
                                   draftAddress: data.venue.address ?? "",
                                   draftCity: data.venue.city ?? "",
@@ -207,6 +236,7 @@ export default function VenueManager({ initialOrganizations = [] }) {
             ...current,
             ...data.venue,
             events: data.venue.events || current.events || [],
+            seatingPlans: data.venue.seatingPlans || current.seatingPlans || [],
             draftName: data.venue.name ?? "",
             draftAddress: data.venue.address ?? "",
             draftCity: data.venue.city ?? "",
@@ -279,6 +309,109 @@ export default function VenueManager({ initialOrganizations = [] }) {
         }
 
         router.refresh();
+    }
+
+    async function createSeatingPlan(event) {
+        event.preventDefault();
+        if (!seatingPlanForm.organizationId || !seatingPlanForm.venueId || !seatingPlanForm.name.trim()) return;
+
+        const layout = buildSimpleBlockLayout({
+            sectionName: seatingPlanForm.sectionName,
+            rowPrefix: seatingPlanForm.rowPrefix,
+            rowCount: seatingPlanForm.rowCount,
+            seatsPerRow: seatingPlanForm.seatsPerRow,
+        });
+
+        setLoading(true);
+        setMessage("Sitzplan wird angelegt...");
+
+        const response = await fetch(`/api/organizations/${seatingPlanForm.organizationId}/seating-plans`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                venueId: seatingPlanForm.venueId,
+                name: seatingPlanForm.name,
+                description: seatingPlanForm.description,
+                layout,
+            }),
+        });
+        const data = await response.json();
+        setLoading(false);
+
+        if (!response.ok) {
+            setMessage(data.error || "Sitzplan konnte nicht angelegt werden.");
+            return;
+        }
+
+        updateOrganizationVenue(seatingPlanForm.organizationId, seatingPlanForm.venueId, (current) => ({
+            ...current,
+            seatingPlans: [data.seatingPlan, ...(current.seatingPlans || [])],
+        }));
+        setSeatingPlanForm(EMPTY_SEATING_PLAN);
+        setMessage("Sitzplan erstellt.");
+    }
+
+    async function archiveSeatingPlan(organizationId, venueId, seatingPlan) {
+        setLoading(true);
+        setMessage("Sitzplan wird archiviert...");
+
+        const response = await fetch(`/api/organizations/${organizationId}/seating-plans`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                seatingPlanId: seatingPlan.id,
+                venueId,
+                name: seatingPlan.name,
+                description: seatingPlan.description,
+                layout: seatingPlan.layout,
+                status: "ARCHIVED",
+            }),
+        });
+        const data = await response.json();
+        setLoading(false);
+
+        if (!response.ok) {
+            setMessage(data.error || "Sitzplan konnte nicht archiviert werden.");
+            return;
+        }
+
+        updateOrganizationVenue(organizationId, venueId, (current) => ({
+            ...current,
+            seatingPlans: (current.seatingPlans || []).map((plan) =>
+                plan.id === seatingPlan.id ? data.seatingPlan : plan
+            ),
+        }));
+        setMessage("Sitzplan archiviert.");
+    }
+
+    function renderSeatingPlanPreview(plan) {
+        const sections = plan.layout?.sections || [];
+        const firstSection = sections[0];
+        const rows = firstSection?.rows || [];
+        const visibleRows = rows.slice(0, 8);
+        const summary = plan.layout?.summary;
+
+        return (
+            <div className="seating-plan-preview">
+                <div className="seating-plan-preview__stage">Buehne / Spielfeld</div>
+                <div className="seating-plan-preview__rows">
+                    {visibleRows.map((row) => (
+                        <div key={row.id} className="seating-plan-preview__row">
+                            <span>{row.label}</span>
+                            <div>
+                                {(row.seats || []).slice(0, 28).map((seat) => (
+                                    <i key={seat.id} title={`${row.label}-${seat.label}`} />
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <p className="field-hint">
+                    {summary?.sections ?? sections.length} Bloecke, {summary?.rows ?? rows.length} Reihen,{" "}
+                    {plan.seatCount ?? summary?.seats ?? 0} Plaetze
+                </p>
+            </div>
+        );
     }
 
     const venueCountByOrg = useMemo(() => {
@@ -398,6 +531,136 @@ export default function VenueManager({ initialOrganizations = [] }) {
                     <div className="field checkout-form__wide">
                         <button type="submit" className="btn btn-primary" disabled={loading}>
                             {loading ? "Speichert..." : "Venue erstellen"}
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <section className="card stack-lg">
+                <div>
+                    <h2 className="card__title">Sitzplan anlegen</h2>
+                    <p className="text-muted">
+                        Erstelle einen Stadionblock mit Reihen und Sitznummern fuer eine Venue.
+                    </p>
+                </div>
+
+                <form className="grid checkout-form__grid" onSubmit={createSeatingPlan}>
+                    <div className="field checkout-form__wide">
+                        <label className="label" htmlFor="seating-org">
+                            Organisation
+                        </label>
+                        <select
+                            id="seating-org"
+                            className="select"
+                            value={seatingPlanForm.organizationId}
+                            onChange={(e) => updateSeatingPlanForm("organizationId", e.target.value)}
+                        >
+                            <option value="">Organisation auswaehlen</option>
+                            {organizations.map((organization) => (
+                                <option key={organization.id} value={organization.id}>
+                                    {organization.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="field checkout-form__wide">
+                        <label className="label" htmlFor="seating-venue">
+                            Venue / Stadion
+                        </label>
+                        <select
+                            id="seating-venue"
+                            className="select"
+                            value={seatingPlanForm.venueId}
+                            onChange={(e) => updateSeatingPlanForm("venueId", e.target.value)}
+                            disabled={!seatingPlanForm.organizationId}
+                        >
+                            <option value="">Venue auswaehlen</option>
+                            {availableSeatingVenues.map((venue) => (
+                                <option key={venue.id} value={venue.id}>
+                                    {venue.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="field checkout-form__wide">
+                        <label className="label" htmlFor="seating-name">
+                            Name
+                        </label>
+                        <input
+                            id="seating-name"
+                            className="input"
+                            value={seatingPlanForm.name}
+                            onChange={(e) => updateSeatingPlanForm("name", e.target.value)}
+                            placeholder="z. B. Rudolf-Harbig-Stadion Haupttribuene"
+                            required
+                        />
+                    </div>
+                    <div className="field checkout-form__wide">
+                        <label className="label" htmlFor="seating-description">
+                            Beschreibung
+                        </label>
+                        <textarea
+                            id="seating-description"
+                            className="textarea"
+                            value={seatingPlanForm.description}
+                            onChange={(e) => updateSeatingPlanForm("description", e.target.value)}
+                            placeholder="Optional: Eingang, Sichtlinien, Verkaufshinweise..."
+                        />
+                    </div>
+                    <div className="field">
+                        <label className="label" htmlFor="seating-section">
+                            Block
+                        </label>
+                        <input
+                            id="seating-section"
+                            className="input"
+                            value={seatingPlanForm.sectionName}
+                            onChange={(e) => updateSeatingPlanForm("sectionName", e.target.value)}
+                        />
+                    </div>
+                    <div className="field">
+                        <label className="label" htmlFor="seating-row-prefix">
+                            Reihen-Prefix
+                        </label>
+                        <input
+                            id="seating-row-prefix"
+                            className="input"
+                            value={seatingPlanForm.rowPrefix}
+                            onChange={(e) => updateSeatingPlanForm("rowPrefix", e.target.value)}
+                            placeholder="z. B. A"
+                        />
+                    </div>
+                    <div className="field">
+                        <label className="label" htmlFor="seating-rows">
+                            Reihen
+                        </label>
+                        <input
+                            id="seating-rows"
+                            type="number"
+                            min="1"
+                            max="400"
+                            className="input"
+                            value={seatingPlanForm.rowCount}
+                            onChange={(e) => updateSeatingPlanForm("rowCount", e.target.value)}
+                        />
+                    </div>
+                    <div className="field">
+                        <label className="label" htmlFor="seating-seats">
+                            Plaetze pro Reihe
+                        </label>
+                        <input
+                            id="seating-seats"
+                            type="number"
+                            min="1"
+                            max="400"
+                            className="input"
+                            value={seatingPlanForm.seatsPerRow}
+                            onChange={(e) => updateSeatingPlanForm("seatsPerRow", e.target.value)}
+                        />
+                    </div>
+                    <div className="field checkout-form__wide">
+                        <button type="submit" className="btn btn-primary" disabled={loading}>
+                            {loading ? "Speichert..." : "Sitzplan erstellen"}
                         </button>
                     </div>
                 </form>
@@ -619,6 +882,10 @@ export default function VenueManager({ initialOrganizations = [] }) {
                                                                 <strong>{venue.linkedEvents?.length || 0}</strong>
                                                             </div>
                                                             <div>
+                                                                <span className="label">Sitzplaene</span>
+                                                                <strong>{venue.seatingPlans?.length || 0}</strong>
+                                                            </div>
+                                                            <div>
                                                                 <span className="label">Organisation</span>
                                                                 <strong>{organization.name}</strong>
                                                             </div>
@@ -626,6 +893,53 @@ export default function VenueManager({ initialOrganizations = [] }) {
                                                                 <span className="label">Verifikation</span>
                                                                 <strong>{venue.verificationStatus || "PENDING"}</strong>
                                                             </div>
+                                                        </div>
+
+                                                        <div className="stack">
+                                                            <div className="section-title-row">
+                                                                <h4 className="card__title">Sitzplaene</h4>
+                                                                <span className="text-muted">
+                                                                    {venue.seatingPlans?.length || 0} hinterlegt
+                                                                </span>
+                                                            </div>
+
+                                                            {venue.seatingPlans?.length ? (
+                                                                <div className="grid checkout-form__grid">
+                                                                    {venue.seatingPlans.map((plan) => (
+                                                                        <article key={plan.id} className="analysis-card stack">
+                                                                            <div className="section-title-row">
+                                                                                <div>
+                                                                                    <strong>{plan.name}</strong>
+                                                                                    <p>
+                                                                                        {plan.status} - {plan.seatCount} Plaetze
+                                                                                    </p>
+                                                                                </div>
+                                                                                {plan.status !== "ARCHIVED" ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        className="btn btn-ghost"
+                                                                                        disabled={loading}
+                                                                                        onClick={() =>
+                                                                                            archiveSeatingPlan(
+                                                                                                organization.id,
+                                                                                                venue.id,
+                                                                                                plan
+                                                                                            )
+                                                                                        }
+                                                                                    >
+                                                                                        Archivieren
+                                                                                    </button>
+                                                                                ) : null}
+                                                                            </div>
+                                                                            {renderSeatingPlanPreview(plan)}
+                                                                        </article>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-muted">
+                                                                    Fuer diese Venue ist noch kein Sitzplan hinterlegt.
+                                                                </p>
+                                                            )}
                                                         </div>
 
                                                         <div className="stack">

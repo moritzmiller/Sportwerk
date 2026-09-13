@@ -22,6 +22,7 @@ const EMPTY = {
     status: "DRAFT",
     organizationId: "",
     venueId: "",
+    seatingPlanId: "",
     ticketTypes: [
         {
             id: null,
@@ -53,6 +54,15 @@ export default function CreateEventForm({ organizations = [] }) {
                     ...current,
                     organizationId: value,
                     venueId: "",
+                    seatingPlanId: "",
+                };
+            }
+
+            if (name === "venueId") {
+                return {
+                    ...current,
+                    venueId: value,
+                    seatingPlanId: "",
                 };
             }
 
@@ -119,6 +129,8 @@ export default function CreateEventForm({ organizations = [] }) {
 
     const selectedOrganization = organizations.find((organization) => organization.id === form.organizationId);
     const availableVenues = selectedOrganization?.venues ?? [];
+    const selectedVenue = availableVenues.find((venue) => venue.id === form.venueId);
+    const availableSeatingPlans = selectedVenue?.seatingPlans?.filter((plan) => plan.status === "ACTIVE") ?? [];
     const orgStatus = selectedOrganization?.verificationStatus || "PENDING";
     const defaultTicket = form.ticketTypes.find((ticketType) => ticketType.isDefault) ?? form.ticketTypes[0];
     const paymentEstimateAmount = Number(defaultTicket?.price || 0);
@@ -365,6 +377,31 @@ export default function CreateEventForm({ organizations = [] }) {
                         {availableVenues.length > 0
                             ? "Wähle einen Ort für das Event aus."
                             : "Für diese Organisation gibt es noch keine Venues."}
+                    </p>
+                </div>
+            ) : null}
+
+            {form.venueId ? (
+                <div className="field">
+                    <label className="label" htmlFor="seatingPlanId">Sitzplan</label>
+                    <select
+                        id="seatingPlanId"
+                        name="seatingPlanId"
+                        className="select"
+                        value={form.seatingPlanId}
+                        onChange={handleChange}
+                    >
+                        <option value="">Ohne Sitzplan</option>
+                        {availableSeatingPlans.map((plan) => (
+                            <option key={plan.id} value={plan.id}>
+                                {plan.name} ({plan.seatCount} Plaetze)
+                            </option>
+                        ))}
+                    </select>
+                    <p className="field-hint">
+                        {availableSeatingPlans.length > 0
+                            ? "Waehle den Plan, der fuer dieses Event gelten soll."
+                            : "Fuer diese Venue ist noch kein aktiver Sitzplan hinterlegt."}
                     </p>
                 </div>
             ) : null}

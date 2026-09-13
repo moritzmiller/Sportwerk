@@ -18,6 +18,9 @@ async function loadOrganization(id) {
             venues: {
                 orderBy: { createdAt: "desc" },
                 include: {
+                    seatingPlans: {
+                        orderBy: { updatedAt: "desc" },
+                    },
                     events: {
                         select: {
                             id: true,
@@ -91,6 +94,9 @@ export async function POST(request, { params }) {
             verificationRequestedAt: new Date(),
         },
         include: {
+            seatingPlans: {
+                orderBy: { updatedAt: "desc" },
+            },
             events: {
                 select: {
                     id: true,
@@ -157,6 +163,9 @@ export async function PATCH(request, { params }) {
             ...(body.notes !== undefined ? { notes: payload.notes } : {}),
         },
         include: {
+            seatingPlans: {
+                orderBy: { updatedAt: "desc" },
+            },
             events: {
                 select: {
                     id: true,

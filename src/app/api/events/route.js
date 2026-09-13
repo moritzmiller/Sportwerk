@@ -76,6 +76,7 @@ export async function POST(request) {
             : Math.max(1, Number(body.capacity) || 0);
     const organizationId = String(body.organizationId ?? "").trim() || null;
     const venueId = String(body.venueId ?? "").trim() || null;
+    const seatingPlanId = String(body.seatingPlanId ?? "").trim() || null;
 
     const ticketTypes = normalizeTicketTypes(body.ticketTypes, {
         name: "Standard",
@@ -131,6 +132,31 @@ export async function POST(request) {
         }
     }
 
+    let seatingPlan = null;
+    if (seatingPlanId) {
+        if (!venueId) {
+            return Response.json(
+                { error: "Ein Sitzplan kann nur mit einer Venue genutzt werden." },
+                { status: 400 }
+            );
+        }
+
+        seatingPlan = await prisma.seatingPlan.findUnique({
+            where: { id: seatingPlanId },
+        });
+
+        if (!seatingPlan || seatingPlan.status !== "ACTIVE") {
+            return Response.json({ error: "Sitzplan nicht gefunden." }, { status: 404 });
+        }
+
+        if (seatingPlan.venueId !== venueId || seatingPlan.organizationId !== organizationId) {
+            return Response.json(
+                { error: "Sitzplan gehoert nicht zur gewaehlten Venue." },
+                { status: 403 }
+            );
+        }
+    }
+
     const event = await prisma.event.create({
         data: {
             title: normalizeSafeText(body.title, { maxLength: 180 }),
@@ -151,6 +177,7 @@ export async function POST(request) {
             ownerId: user.id,
             organizationId,
             venueId,
+            seatingPlanId,
         },
     });
 
@@ -179,6 +206,8 @@ export async function POST(request) {
                 status: effectiveStatus,
                 capacity: event.capacity,
                 organizationId: event.organizationId,
+                venueId: event.venueId,
+                seatingPlanId: event.seatingPlanId,
                 allowedPaymentMethods,
                 ticketPrinter,
                 eventType,

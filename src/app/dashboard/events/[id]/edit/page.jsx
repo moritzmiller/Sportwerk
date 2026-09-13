@@ -41,6 +41,7 @@ export default async function EditEventPage({ params }) {
             ownerId: true,
             organizationId: true,
             venueId: true,
+            seatingPlanId: true,
             organization: {
                 select: {
                     id: true,
@@ -51,6 +52,15 @@ export default async function EditEventPage({ params }) {
                 select: {
                     id: true,
                     name: true,
+                },
+            },
+            seatingPlan: {
+                select: {
+                    id: true,
+                    name: true,
+                    seatCount: true,
+                    status: true,
+                    venueId: true,
                 },
             },
             owner: { select: { id: true, email: true, name: true } },
@@ -99,6 +109,18 @@ export default async function EditEventPage({ params }) {
                     notes: true,
                     organizationId: true,
                     verificationStatus: true,
+                    seatingPlans: {
+                        where: { status: "ACTIVE" },
+                        orderBy: { updatedAt: "desc" },
+                        select: {
+                            id: true,
+                            name: true,
+                            seatCount: true,
+                            status: true,
+                            venueId: true,
+                            organizationId: true,
+                        },
+                    },
                 },
             },
         },

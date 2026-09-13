@@ -30,6 +30,7 @@ function toFormValue(event) {
             cancellationReason: "",
             organizationId: "",
             venueId: "",
+            seatingPlanId: "",
             ticketTypes: [
                 {
                     id: null,
@@ -67,6 +68,7 @@ function toFormValue(event) {
         cancellationReason: event.cancellationReason ?? "",
         organizationId: event.organizationId ?? "",
         venueId: event.venueId ?? "",
+        seatingPlanId: event.seatingPlanId ?? "",
         ticketTypes:
             event.ticketTypes?.length > 0
                 ? event.ticketTypes.map((ticketType) => ({
@@ -108,6 +110,8 @@ export default function EventEditorForm({ event, organizations = [] }) {
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(false);
     const selectedOrganization = organizations.find((organization) => organization.id === form.organizationId);
+    const selectedVenue = selectedOrganization?.venues?.find((venue) => venue.id === form.venueId);
+    const availableSeatingPlans = selectedVenue?.seatingPlans?.filter((plan) => plan.status === "ACTIVE") ?? [];
     const orgStatus = selectedOrganization?.verificationStatus || "PENDING";
     const defaultTicket = form.ticketTypes.find((ticketType) => ticketType.isDefault) ?? form.ticketTypes[0];
     const paymentEstimateAmount = Number(defaultTicket?.price || 0);
@@ -423,6 +427,7 @@ export default function EventEditorForm({ event, organizations = [] }) {
                             onChange={(e) => {
                                 updateField("organizationId", e.target.value);
                                 updateField("venueId", "");
+                                updateField("seatingPlanId", "");
                             }}
                         >
                             <option value="">Persönlich / keine Organisation</option>
@@ -455,7 +460,10 @@ export default function EventEditorForm({ event, organizations = [] }) {
                             id="event-venue"
                             className="select"
                             value={form.venueId}
-                            onChange={(e) => updateField("venueId", e.target.value)}
+                            onChange={(e) => {
+                                updateField("venueId", e.target.value);
+                                updateField("seatingPlanId", "");
+                            }}
                         >
                             <option value="">Ohne Venue</option>
                             {(organizations.find((organization) => organization.id === form.organizationId)?.venues || []).map(
@@ -466,6 +474,32 @@ export default function EventEditorForm({ event, organizations = [] }) {
                                 )
                             )}
                         </select>
+                    </div>
+                ) : null}
+
+                {form.venueId ? (
+                    <div className="field checkout-form__wide">
+                        <label className="label" htmlFor="event-seating-plan">
+                            Sitzplan
+                        </label>
+                        <select
+                            id="event-seating-plan"
+                            className="select"
+                            value={form.seatingPlanId}
+                            onChange={(e) => updateField("seatingPlanId", e.target.value)}
+                        >
+                            <option value="">Ohne Sitzplan</option>
+                            {availableSeatingPlans.map((plan) => (
+                                <option key={plan.id} value={plan.id}>
+                                    {plan.name} ({plan.seatCount} Plaetze)
+                                </option>
+                            ))}
+                        </select>
+                        <p className="field-hint">
+                            {availableSeatingPlans.length > 0
+                                ? "Der Sitzplan wird fuer dieses Event gespeichert."
+                                : "Fuer diese Venue ist noch kein aktiver Sitzplan hinterlegt."}
+                        </p>
                     </div>
                 ) : null}
 

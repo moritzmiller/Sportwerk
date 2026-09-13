@@ -47,6 +47,15 @@ export async function GET(_request, { params }) {
                     { createdAt: "asc" },
                 ],
             },
+            seatingPlan: {
+                select: {
+                    id: true,
+                    name: true,
+                    seatCount: true,
+                    status: true,
+                    venueId: true,
+                },
+            },
         },
     });
 
@@ -79,6 +88,9 @@ export async function GET(_request, { params }) {
             capacity: event.capacity,
             soldTickets: event.soldTickets,
             viewCount: event.viewCount,
+            venueId: event.venueId,
+            seatingPlanId: event.seatingPlanId,
+            seatingPlan: event.seatingPlan,
             organization: event.organization
                 ? {
                       id: event.organization.id,
@@ -164,6 +176,8 @@ export async function PATCH(request, { params }) {
     const nextOrganizationId =
         typeof body.organizationId === "string" ? body.organizationId.trim() : null;
     const nextVenueId = typeof body.venueId === "string" ? body.venueId.trim() : null;
+    const nextSeatingPlanId =
+        typeof body.seatingPlanId === "string" ? body.seatingPlanId.trim() : null;
     const nextTicketTypes = Array.isArray(body.ticketTypes)
         ? normalizeTicketTypes(body.ticketTypes, {
               name: "Standard",
@@ -240,6 +254,39 @@ export async function PATCH(request, { params }) {
         } else if (nextVenue.ownerId !== user.id || nextVenue.organizationId) {
             return Response.json(
                 { error: "Venue kann nur für eigene, persönliche Events genutzt werden." },
+                { status: 403 }
+            );
+        }
+    }
+
+    const effectiveVenueId = nextVenueId === "" ? null : nextVenueId ?? event.venueId ?? null;
+    const effectiveOrganizationId =
+        nextOrganizationId === "" ? null : nextOrganizationId ?? event.organizationId ?? null;
+    const effectiveSeatingPlanId =
+        nextSeatingPlanId === "" ? null : nextSeatingPlanId ?? event.seatingPlanId ?? null;
+
+    if (effectiveSeatingPlanId) {
+        if (!effectiveVenueId) {
+            return Response.json(
+                { error: "Ein Sitzplan kann nur mit einer Venue genutzt werden." },
+                { status: 400 }
+            );
+        }
+
+        const nextSeatingPlan = await prisma.seatingPlan.findUnique({
+            where: { id: effectiveSeatingPlanId },
+        });
+
+        if (!nextSeatingPlan || nextSeatingPlan.status !== "ACTIVE") {
+            return Response.json({ error: "Sitzplan nicht gefunden." }, { status: 404 });
+        }
+
+        if (
+            nextSeatingPlan.venueId !== effectiveVenueId ||
+            nextSeatingPlan.organizationId !== effectiveOrganizationId
+        ) {
+            return Response.json(
+                { error: "Sitzplan gehoert nicht zur gewaehlten Venue." },
                 { status: 403 }
             );
         }
@@ -353,6 +400,7 @@ export async function PATCH(request, { params }) {
             organizationId:
                 nextOrganizationId === "" ? null : nextOrganizationId ?? event.organizationId,
             venueId: nextVenueId === "" ? null : nextVenueId ?? event.venueId,
+            seatingPlanId: effectiveSeatingPlanId,
             status: effectiveStatus,
             allowedPaymentMethods: nextAllowedPaymentMethods,
             ticketPrinter: nextTicketPrinter,
@@ -384,6 +432,7 @@ export async function PATCH(request, { params }) {
                 capacity: updated.capacity,
                 organizationId: updated.organizationId,
                 venueId: updated.venueId,
+                seatingPlanId: updated.seatingPlanId,
                 allowedPaymentMethods: updated.allowedPaymentMethods,
                 ticketPrinter: updated.ticketPrinter,
                 eventType: updated.eventType,

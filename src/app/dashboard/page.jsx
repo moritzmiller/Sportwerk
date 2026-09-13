@@ -193,6 +193,18 @@ async function OrganizerView({ user }) {
                             city: true,
                             notes: true,
                             verificationStatus: true,
+                            seatingPlans: {
+                                where: { status: "ACTIVE" },
+                                orderBy: { updatedAt: "desc" },
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    seatCount: true,
+                                    status: true,
+                                    venueId: true,
+                                    organizationId: true,
+                                },
+                            },
                         },
                     },
                     events: {

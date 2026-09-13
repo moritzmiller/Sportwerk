@@ -45,6 +45,21 @@ export default async function VenuesPage() {
                     city: true,
                     notes: true,
                     organizationId: true,
+                    seatingPlans: {
+                        orderBy: { updatedAt: "desc" },
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                            layout: true,
+                            seatCount: true,
+                            status: true,
+                            venueId: true,
+                            organizationId: true,
+                            createdAt: true,
+                            updatedAt: true,
+                        },
+                    },
                     events: {
                         select: {
                             id: true,

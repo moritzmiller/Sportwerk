@@ -41,6 +41,7 @@ model User {
   eventMemberships         EventMember[]
   venues                   Venue[]                  @relation("VenueOwner")
   venueReviews             Venue[]                  @relation("VenueReviewActor")
+  seatingPlans             SeatingPlan[]            @relation("SeatingPlanOwner")
   crmNotes                 CustomerNote[]           @relation("CustomerNoteOrganizer")
   crmTasks                 CustomerTask[]           @relation("CustomerTaskOrganizer")
   offerCustomers           OfferCustomer[]          @relation("OfferCustomerOwner")
@@ -82,6 +83,7 @@ model Event {
   ownerId               String
   organizationId        String?
   venueId               String?
+  seatingPlanId         String?
 
   bookings     Booking[]
   favorites    EventFavorite[]
@@ -96,6 +98,7 @@ model Event {
   owner        User               @relation(fields: [ownerId], references: [id])
   organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   venue        Venue?             @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  seatingPlan  SeatingPlan?       @relation(fields: [seatingPlanId], references: [id], onDelete: SetNull)
   duplicateOf  Event?             @relation("EventDuplicateOf", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates   Event[]            @relation("EventDuplicateOf")
   members      EventMember[]
@@ -105,6 +108,7 @@ model Event {
   @@index([startDate])
   @@index([organizationId])
   @@index([venueId])
+  @@index([seatingPlanId])
 }
 
 model Booking {
@@ -207,6 +211,7 @@ model Organization {
   members    OrganizationMember[]
   events     Event[]
   venues     Venue[]
+  seatingPlans SeatingPlan[]
 
   @@index([ownerId])
   @@index([verificationStatus])
@@ -264,10 +269,35 @@ model Venue {
   owner        User          @relation("VenueOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   reviewedBy   User?         @relation("VenueReviewActor", fields: [reviewedById], references: [id], onDelete: SetNull)
   events       Event[]
+  seatingPlans SeatingPlan[]
 
   @@index([organizationId])
   @@index([ownerId])
   @@index([verificationStatus])
+}
+
+model SeatingPlan {
+  id             String            @id @default(cuid())
+  name           String
+  description    String?
+  layout         Json
+  seatCount      Int               @default(0)
+  status         SeatingPlanStatus @default(ACTIVE)
+  venueId        String
+  organizationId String?
+  ownerId        String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  owner        User          @relation("SeatingPlanOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  events       Event[]
+
+  @@index([venueId])
+  @@index([organizationId])
+  @@index([ownerId])
+  @@index([status])
 }
 
 model CustomerNote {
@@ -1483,6 +1513,11 @@ enum EventStatus {
   CANCELLED
   POSTPONED
   SOLD_OUT
+}
+
+enum SeatingPlanStatus {
+  ACTIVE
+  ARCHIVED
 }
 
 enum EventInteractionType {

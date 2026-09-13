@@ -3376,6 +3376,51 @@ body:has(.auth-page) > .footer {
     display: grid;
     gap: var(--space-3xs);
 }
+.seating-plan-preview {
+    display: grid;
+    gap: var(--space-xs);
+    width: 100%;
+    overflow: hidden;
+}
+.seating-plan-preview__stage {
+    border: 1px solid var(--clr-border);
+    border-radius: 8px;
+    padding: 0.45rem 0.75rem;
+    text-align: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--clr-text-muted);
+    background: color-mix(in srgb, var(--clr-border) 35%, transparent);
+}
+.seating-plan-preview__rows {
+    display: grid;
+    gap: 0.35rem;
+    overflow-x: auto;
+}
+.seating-plan-preview__row {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+.seating-plan-preview__row span {
+    color: var(--clr-text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.seating-plan-preview__row div {
+    display: flex;
+    gap: 0.2rem;
+    min-width: max-content;
+}
+.seating-plan-preview__row i {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: var(--clr-accent);
+    opacity: 0.8;
+}
 .checkout-page__header {
     display: flex;
     align-items: flex-start;
