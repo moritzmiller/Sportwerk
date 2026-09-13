@@ -1280,6 +1280,10 @@ body:has(.auth-page) > .footer {
         padding-block: var(--space-xl);
     }
 
+    .b2b-hero .container {
+        padding-inline: var(--space-s) var(--space-l);
+    }
+
     .b2b-hero__image {
         background:
             linear-gradient(180deg, rgba(7, 18, 18, 0.92) 0%, rgba(7, 18, 18, 0.76) 54%, rgba(7, 18, 18, 0.92) 100%),
@@ -1287,10 +1291,10 @@ body:has(.auth-page) > .footer {
     }
 
     .b2b-hero h1 {
-        max-width: 100%;
-        font-size: clamp(2.35rem, 10.5vw, 2.85rem);
-        line-height: 0.98;
-        overflow-wrap: normal;
+        max-width: 20rem;
+        font-size: clamp(2rem, 9vw, 2.45rem);
+        line-height: 1.02;
+        overflow-wrap: break-word;
     }
 
     .b2b-hero__actions,
@@ -1303,6 +1307,20 @@ body:has(.auth-page) > .footer {
     .b2b-hero__actions .btn,
     .b2b-workflow__inner .btn {
         width: 100%;
+    }
+
+    .b2b-hero p,
+    .b2b-hero__copy,
+    .b2b-hero__actions,
+    .b2b-command-panel {
+        width: min(100%, 20rem);
+        max-width: 20rem;
+    }
+
+    .b2b-hero__actions .btn {
+        padding-inline: var(--space-s);
+        font-size: 1rem;
+        overflow-wrap: anywhere;
     }
 
     .b2b-command-panel__metrics,
@@ -5415,12 +5433,14 @@ body:has(.auth-page) > .footer {
 .home-hero .btn-primary,
 .btn-primary {
     background: var(--clr-primary);
+    color: #0b1e1b;
     box-shadow: 0 14px 28px rgba(232, 93, 63, 0.2);
 }
 
 .home-hero .btn-primary:hover,
 .btn-primary:hover {
     background: #cf4d34;
+    color: #ffffff;
 }
 
 .home-proof-grid {
