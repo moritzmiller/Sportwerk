@@ -1,0 +1,10 @@
+Flask
+beautifulsoup4
+google-auth
+gunicorn
+openai
+Pillow
+playwright
+python-docx
+reportlab
+requests
