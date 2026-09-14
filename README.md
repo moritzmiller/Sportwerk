@@ -14,6 +14,26 @@ npm run dev
 
 Open `http://localhost:3000` with your browser.
 
+## Pressespiegel
+
+The dashboard link `/pressespiegel` is served by the Flask app in `Pressespiegel/web_app.py`.
+Next.js forwards the Pressespiegel routes, job endpoints, Flask assets, and Flask login/logout routes to that backend through `PRESSESPIEGEL_BASE_URL`.
+
+For local development, start the Flask backend and the Next.js app in separate terminals:
+
+```bash
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+python app.py
+```
+
+```bash
+npm run dev
+```
+
+With no `PRESSESPIEGEL_BASE_URL` set, Next.js forwards to `http://127.0.0.1:5000`.
+In production, set `PRESSESPIEGEL_BASE_URL` to the HTTPS URL of the running Flask service.
+
 ## Booking and PayPal
 
 The app includes a booking flow with PayPal checkout and organizer access to bookings in the dashboard.
