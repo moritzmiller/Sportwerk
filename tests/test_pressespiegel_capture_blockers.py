@@ -118,6 +118,81 @@ class PressespiegelBrowserCleanupTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await browser.close()
 
+    async def test_clean_article_locator_removes_embedded_access_popup(self) -> None:
+        async with async_playwright() as playwright:
+            try:
+                browser = await playwright.chromium.launch()
+            except PlaywrightError as exc:
+                self.skipTest(f"Playwright Chromium ist nicht installiert: {exc}")
+
+            page = await browser.new_page()
+            try:
+                await page.set_content(
+                    """
+                    <html>
+                      <body>
+                        <main>
+                          <article>
+                            <h1>Sportmeldung</h1>
+                            <p>Dieser Artikel bleibt im Screenshot erhalten.</p>
+                            <section class="article-popup">
+                              Ihr Zugriff auf rnz.de: Mit Werbung lesen oder Premium kaufen
+                            </section>
+                          </article>
+                        </main>
+                      </body>
+                    </html>
+                    """
+                )
+
+                article = page.locator("article")
+                await pressespiegel.clean_article_locator(article)
+
+                self.assertEqual(await page.locator(".article-popup").count(), 0)
+                self.assertIn("Dieser Artikel bleibt", await article.inner_text())
+            finally:
+                await browser.close()
+
+    async def test_settle_visible_page_for_capture_removes_delayed_popup(self) -> None:
+        async with async_playwright() as playwright:
+            try:
+                browser = await playwright.chromium.launch()
+            except PlaywrightError as exc:
+                self.skipTest(f"Playwright Chromium ist nicht installiert: {exc}")
+
+            page = await browser.new_page()
+            try:
+                await page.set_content(
+                    """
+                    <html>
+                      <body>
+                        <article>
+                          <h1>Sportmeldung</h1>
+                          <p>Dieser Artikel bleibt im Screenshot erhalten.</p>
+                        </article>
+                        <script>
+                          setTimeout(() => {
+                            const popup = document.createElement("div");
+                            popup.id = "delayed_message_container";
+                            popup.textContent = "Ihr Zugriff auf rnz.de: Premium kaufen";
+                            popup.style.position = "fixed";
+                            popup.style.inset = "20px";
+                            popup.style.zIndex = "99999";
+                            document.body.appendChild(popup);
+                          }, 120);
+                        </script>
+                      </body>
+                    </html>
+                    """
+                )
+
+                await pressespiegel.settle_visible_page_for_capture(page, passes=3)
+
+                self.assertEqual(await page.locator("#delayed_message_container").count(), 0)
+                self.assertIn("Dieser Artikel bleibt", await page.locator("article").inner_text())
+            finally:
+                await browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()

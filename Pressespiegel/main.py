@@ -1274,6 +1274,8 @@ async def clean_visible_page(page: Page) -> None:
                 '#CybotCookiebotDialog', '#cookiebot',
                 '#didomi-host', '.didomi-popup-container', '.didomi-consent-popup',
                 '#sp_message_container', '[id*="sp_message"]', '[class*="sp_message"]',
+                '[id*="message_container" i]', '[class*="message_container" i]',
+                '[id*="sourcepoint" i]', '[class*="sourcepoint" i]',
                 '#qc-cmp2-container', '.qc-cmp2-container',
                 '#cmpbox', '.cmpbox', '.cmp-banner', '.cmp-overlay',
                 '.cmp-root-container', '[class*="cmp-root" i]',
@@ -1439,6 +1441,13 @@ async def clean_visible_page(page: Page) -> None:
         }
         """,
     )
+
+
+async def settle_visible_page_for_capture(page: Page, passes: int = 3) -> None:
+    """Raeumt Overlays in kurzen Paessen ab, auch wenn sie verzoegert nachrendern."""
+    for _ in range(max(1, passes)):
+        await clean_visible_page(page)
+        await page.wait_for_timeout(300)
 
 
 async def find_article_locator(page: Page) -> Locator:
@@ -1671,6 +1680,42 @@ async def clean_article_locator(locator: Locator) -> None:
                     }
                 } catch (_) {}
             });
+
+            const normalizeBlockerText = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+            const looksLikeCaptureBlocker = (text) => {
+                const compact = normalizeBlockerText(text);
+                if (!compact) return false;
+                return (
+                    /(ihr zugriff|zugriff auf|mit werbung lesen|werbung lesen|premium kaufen|weiterlesen mit werbung)/i.test(compact) ||
+                    /(adblocker|werbeblocker|anzeige blockiert|werbung deaktiviert)/i.test(compact) ||
+                    /(abo abschliessen|abo abschlie.en|abonnieren|nur fuer abonnenten|nur f.r abonnenten|einloggen und weiterlesen|registrieren und weiterlesen)/i.test(compact) ||
+                    /(subscribe|subscription|sign in to continue|log in to continue|continue reading)/i.test(compact)
+                );
+            };
+            const removableBlockerWrapper = (node) => {
+                const wrapper = node.closest(
+                    'dialog, [role="dialog"], [aria-modal="true"], aside, section, div, figure, ' +
+                    '[class*="modal" i], [class*="popup" i], [class*="overlay" i], [class*="paywall" i], ' +
+                    '[class*="premium" i], [class*="subscription" i], [class*="adblock" i], [id*="message" i]'
+                );
+                if (!wrapper || wrapper === root || wrapper.matches('html, body, main, article')) return node;
+                return wrapper;
+            };
+            Array.from(root.querySelectorAll('*')).reverse().forEach(node => {
+                try {
+                    if (node === root || node.matches('main, article')) return;
+                    const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                    if (!looksLikeCaptureBlocker(text)) return;
+                    const target = removableBlockerWrapper(node);
+                    if (target && target !== root && !target.matches('main, article')) {
+                        target.remove();
+                    } else {
+                        node.style.setProperty('display', 'none', 'important');
+                        node.style.setProperty('visibility', 'hidden', 'important');
+                        node.style.setProperty('pointer-events', 'none', 'important');
+                    }
+                } catch (_) {}
+            });
             root.style.setProperty('background', '#ffffff', 'important');
         }
         """
@@ -1764,10 +1809,9 @@ async def capture_article(
         await wait_for_page_stability(page, timeout_ms=12_000, quiet_ms=900)
         await try_accept_cookie_banner(page)
         await wait_for_page_stability(page, timeout_ms=8_000, quiet_ms=650)
-        await clean_visible_page(page)
-        await page.wait_for_timeout(300)
+        await settle_visible_page_for_capture(page, passes=2)
         await auto_scroll_page(page)
-        await clean_visible_page(page)
+        await settle_visible_page_for_capture(page, passes=2)
 
         html_content = await get_page_content_safely(page)
         visible_text_raw = await evaluate_page_safely(
@@ -1825,23 +1869,24 @@ async def capture_article(
                 )
 
         await try_accept_cookie_banner(page)
-        await clean_visible_page(page)
-        await page.wait_for_timeout(500)
+        await settle_visible_page_for_capture(page, passes=3)
 
         target = await find_article_locator(page)
         try:
             await clean_article_locator(target)
+            await settle_visible_page_for_capture(page, passes=2)
         except PlaywrightError as exc:
             if not _is_navigation_race_error(exc):
                 raise
             await wait_for_page_stability(page, timeout_ms=8_000, quiet_ms=650)
             target = await find_article_locator(page)
             await clean_article_locator(target)
+            await settle_visible_page_for_capture(page, passes=2)
 
         if cancel_event.is_set():
             raise UserCancelled
 
-        await clean_visible_page(page)
+        await settle_visible_page_for_capture(page, passes=3)
         await clean_article_locator(target)
 
         try:
@@ -1858,6 +1903,7 @@ async def capture_article(
                 target = await find_article_locator(page)
                 try:
                     await clean_article_locator(target)
+                    await settle_visible_page_for_capture(page, passes=2)
                     await target.screenshot(
                         path=str(image_path),
                         animations="disabled",
