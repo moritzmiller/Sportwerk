@@ -5,16 +5,26 @@
 
 {% block content %}
     <main class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Sportwerk</p>
+      <header class="press-hero">
+        <div class="press-hero__content">
+          <p class="eyebrow">Sportwerk Presse</p>
           <h1>Pressespiegel Generator</h1>
+          <p class="press-hero__lead">Artikel sammeln, PDF-Layout festlegen und den fertigen Pressespiegel exportieren.</p>
+          <div class="press-hero__steps" aria-label="Arbeitsbereiche">
+            <a href="#articles-title">Artikel</a>
+            <a href="#layout-title">Layout</a>
+            <a href="#status-title">Export</a>
+          </div>
         </div>
-        <div class="topbar__meta" aria-label="Pressespiegel Bereiche">
-          <a href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a href="#articles-title">Artikel</a>
-          <a href="#layout-title">Layout</a>
-          <a href="#status-title">Export</a>
+        <div class="press-hero__stats" aria-label="Aktueller Pressespiegel">
+          <div>
+            <span id="hero-summary-sections">1</span>
+            <p>Abschnitte</p>
+          </div>
+          <div>
+            <span id="hero-summary-urls">0</span>
+            <p>URLs</p>
+          </div>
         </div>
       </header>
 
@@ -28,7 +38,7 @@
             <button class="button button--secondary" type="button" id="add-section">Neue Überschrift hinzufügen</button>
           </div>
 
-          <div class="saved-pressespiegel">
+          <div class="saved-pressespiegel" aria-label="Gespeicherte Pressespiegel">
             <label class="field">
               <span>Gespeicherter Pressespiegel</span>
               <select id="saved-pressespiegel-select">
@@ -189,6 +199,11 @@
             </div>
           </div>
 
+          <div class="export-state">
+            <strong id="status-text">Bereit</strong>
+            <span>PDF-Ausgabe</span>
+          </div>
+
           <div class="summary">
             <div>
               <span id="summary-sections">1</span>
@@ -205,7 +220,6 @@
           <div class="progress" aria-label="Fortschritt">
             <div id="progress-bar"></div>
           </div>
-          <p id="status-text" class="status-text">Bereit</p>
           <a id="download-link" class="button button--download hidden" href="#">PDF herunterladen</a>
 
           <div class="log" id="log-output" aria-live="polite"></div>
