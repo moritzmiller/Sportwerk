@@ -492,6 +492,100 @@ textarea {
   font-weight: var(--font-weight-strong);
 }
 
+.press-page {
+  background:
+    linear-gradient(135deg, rgba(233, 120, 33, 0.1), rgba(37, 99, 235, 0.08) 42%, transparent 72%),
+    linear-gradient(180deg, #fbfcfe 0, #edf2f7 460px),
+    var(--color-page);
+}
+
+.press-page .app-shell {
+  padding-top: var(--space-8);
+}
+
+.press-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.34fr);
+  gap: var(--space-8);
+  align-items: stretch;
+  margin-bottom: var(--space-8);
+  border: 1px solid rgba(207, 214, 225, 0.92);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #ffffff 0%, #f6f8fb 58%, #fff4e8 100%);
+  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.1);
+  padding: var(--space-8);
+}
+
+.press-hero__content {
+  min-width: 0;
+}
+
+.press-hero h1 {
+  max-width: 680px;
+  margin: 0;
+  font-size: var(--font-size-3xl);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0;
+}
+
+.press-hero__lead {
+  max-width: 640px;
+  margin: var(--space-4) 0 0;
+  color: var(--color-ink-soft);
+  font-size: var(--font-size-lg);
+}
+
+.press-hero__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-7);
+}
+
+.press-hero__steps a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid rgba(233, 120, 33, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--color-ink);
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-heavy);
+  text-decoration: none;
+}
+
+.press-hero__stats {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+.press-hero__stats div {
+  display: grid;
+  align-content: center;
+  min-height: 92px;
+  border: 1px solid rgba(207, 214, 225, 0.9);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.82);
+  padding: var(--space-6);
+}
+
+.press-hero__stats span {
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1;
+}
+
+.press-hero__stats p {
+  margin: var(--space-2) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-strong);
+}
+
 .dashboard-header__meta div {
   min-width: 94px;
   border: 1px solid var(--color-line);
@@ -1311,8 +1405,8 @@ textarea {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.82fr);
-  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.76fr);
+  gap: var(--space-7);
   align-items: start;
 }
 
@@ -1321,7 +1415,12 @@ textarea {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
-  padding: var(--space-6);
+  padding: var(--space-7);
+}
+
+.press-page .panel {
+  border-color: rgba(207, 214, 225, 0.94);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
 }
 
 .panel--wide {
@@ -1338,9 +1437,9 @@ textarea {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-7);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-7);
   border-bottom: 1px solid var(--color-line);
-  padding-bottom: var(--space-5);
+  padding-bottom: var(--space-6);
 }
 
 .panel h2 {
@@ -1470,11 +1569,13 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: end;
   gap: var(--space-4);
-  margin-bottom: var(--space-6);
-  border: 1px solid var(--color-line);
+  margin-bottom: var(--space-7);
+  border: 1px solid rgba(233, 120, 33, 0.28);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-soft);
-  padding: var(--space-5);
+  background:
+    linear-gradient(135deg, rgba(233, 120, 33, 0.08), rgba(37, 99, 235, 0.05)),
+    var(--color-surface-soft);
+  padding: var(--space-6);
 }
 
 .saved-pressespiegel__actions {
@@ -1507,10 +1608,11 @@ textarea:focus {
 }
 
 .section-item {
-  border: 1px solid var(--color-line);
+  border: 1px solid rgba(207, 214, 225, 0.94);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-soft);
-  padding: var(--space-5);
+  background: linear-gradient(180deg, #ffffff 0, #f7f9fc 100%);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+  padding: var(--space-6);
 }
 
 .section-item__head {
@@ -1542,7 +1644,7 @@ textarea:focus {
 }
 
 .summary div {
-  background: var(--color-surface-soft);
+  background: linear-gradient(180deg, #ffffff 0, #f7f9fc 100%);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
@@ -1574,6 +1676,27 @@ textarea:focus {
   height: 100%;
   background: var(--color-accent);
   transition: width var(--duration-fast) ease;
+}
+
+.export-state {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  border: 1px solid rgba(21, 128, 61, 0.2);
+  border-radius: var(--radius-lg);
+  background: rgba(21, 128, 61, 0.07);
+  padding: var(--space-5);
+}
+
+.export-state strong {
+  color: var(--color-ink);
+  font-size: var(--font-size-lg);
+}
+
+.export-state span {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-strong);
 }
 
 .status-text {
@@ -1609,6 +1732,14 @@ textarea:focus {
 }
 
 @media (max-width: 980px) {
+  .press-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .press-hero__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .site-nav {
     grid-template-columns: 1fr;
     align-items: stretch;
@@ -1641,6 +1772,7 @@ textarea:focus {
   .topbar,
   .dashboard-header,
   .workspace,
+  .press-hero,
   .dashboard-hero {
     display: grid;
   }
@@ -1694,6 +1826,26 @@ textarea:focus {
 }
 
 @media (max-width: 620px) {
+  .press-page .app-shell {
+    padding-top: var(--space-5);
+  }
+
+  .press-hero {
+    padding: var(--space-6);
+  }
+
+  .press-hero h1 {
+    font-size: var(--font-size-2xl);
+  }
+
+  .press-hero__lead {
+    font-size: var(--font-size-md);
+  }
+
+  .press-hero__stats {
+    grid-template-columns: 1fr;
+  }
+
   .site-nav,
   .site-footer {
     width: calc(100% - var(--space-6) * 2);
