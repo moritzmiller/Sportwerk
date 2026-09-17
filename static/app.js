@@ -11,8 +11,6 @@ const logOutput = document.querySelector("#log-output");
 const downloadLink = document.querySelector("#download-link");
 const summarySections = document.querySelector("#summary-sections");
 const summaryUrls = document.querySelector("#summary-urls");
-const heroSummarySections = document.querySelector("#hero-summary-sections");
-const heroSummaryUrls = document.querySelector("#hero-summary-urls");
 const fallbackUrls = document.querySelector("textarea[name='fallback_urls']");
 const savedSelect = document.querySelector("#saved-pressespiegel-select");
 const savedName = document.querySelector("#saved-pressespiegel-name");
@@ -61,16 +59,8 @@ function updateSummary() {
     return sum + getUrlCount(item.querySelector("textarea[name='section_urls']").value);
   }, 0);
   const fallbackUrlCount = getUrlCount(fallbackUrls.value);
-  const sectionCount = activeSections.length || sectionItems.length;
-  const displayedUrlCount = activeSections.length ? urlCount : fallbackUrlCount;
-  summarySections.textContent = sectionCount;
-  summaryUrls.textContent = displayedUrlCount;
-  if (heroSummarySections) {
-    heroSummarySections.textContent = sectionCount;
-  }
-  if (heroSummaryUrls) {
-    heroSummaryUrls.textContent = displayedUrlCount;
-  }
+  summarySections.textContent = activeSections.length || sectionItems.length;
+  summaryUrls.textContent = activeSections.length ? urlCount : fallbackUrlCount;
 }
 
 function applyLayout(layoutId) {
