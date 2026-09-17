@@ -138,6 +138,13 @@ function readBool(env, name, fallback = false) {
     return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
+function isNextProductionBuild(env) {
+    return (
+        env?.NEXT_PHASE === "phase-production-build" ||
+        (env?.NODE_ENV === "production" && env?.npm_lifecycle_event === "build")
+    );
+}
+
 function validateRequiredSecret({ env, issues, name, production, area, minLength = 16 }) {
     const value = clean(env[name]);
     if (!value) {
@@ -673,9 +680,14 @@ export function getAppUrl(request = null, env = process.env) {
 
 export function getDatabaseUrl(env = process.env) {
     const result = validateEnv(env);
-    assertArea(result, "database", env);
     const configured = result.config.databaseUrl;
     if (configured) return configured;
+
+    if (isNextProductionBuild(env)) {
+        return "postgresql://postgres:postgres@localhost:5432/postgres";
+    }
+
+    assertArea(result, "database", env);
 
     if (result.production) {
         assertEnv("database", env);

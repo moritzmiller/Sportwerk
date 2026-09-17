@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --color-page: #eef1f4;
+  --color-page: #f3f5f8;
   --color-surface: #ffffff;
   --color-surface-soft: #f7f8fa;
   --color-surface-muted: #e6ebf1;
@@ -45,9 +45,9 @@
   --radius-sm: 5px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --shadow-panel: 0 18px 44px rgba(20, 27, 38, 0.12);
-  --shadow-card: 0 14px 32px rgba(20, 27, 38, 0.08);
-  --width-page: 1440px;
+  --shadow-panel: 0 10px 28px rgba(20, 27, 38, 0.08);
+  --shadow-card: 0 8px 20px rgba(20, 27, 38, 0.06);
+  --width-page: 1280px;
   --duration-fast: 180ms;
 }
 
@@ -63,7 +63,9 @@ body {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-page);
+  background:
+    linear-gradient(180deg, #f8fafc 0, var(--color-page) 320px),
+    var(--color-page);
   color: var(--color-ink);
   font-family: var(--font-family-base);
   font-size: var(--font-size-md);
@@ -92,7 +94,7 @@ textarea {
 .dashboard-shell {
   width: min(var(--width-page), 100%);
   margin: 0 auto;
-  padding: var(--space-10);
+  padding: var(--space-10) var(--space-8) var(--space-12);
   overflow-x: hidden;
 }
 
@@ -224,9 +226,14 @@ textarea {
   width: min(var(--width-page), calc(100% - var(--space-10) * 2));
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-4);
-  margin: var(--space-6) auto 0;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin: var(--space-6) auto var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-3) var(--space-5);
   color: var(--color-muted);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-strong);
@@ -235,7 +242,7 @@ textarea {
 .session-bar a {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--color-surface);
   color: var(--color-ink);
   padding: var(--space-2) var(--space-4);
   text-decoration: none;
@@ -302,10 +309,12 @@ textarea {
 .topbar,
 .dashboard-header {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-10);
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-line);
+  padding-bottom: var(--space-6);
 }
 
 .topbar h1,
@@ -319,7 +328,7 @@ textarea {
 
 .topbar h1,
 .dashboard-header h1 {
-  font-size: clamp(28px, 4vw, var(--font-size-3xl));
+  font-size: clamp(28px, 4vw, 38px);
   line-height: var(--line-height-tight);
 }
 
@@ -350,7 +359,7 @@ textarea {
 .dashboard-header__meta div {
   min-width: 94px;
   border: 1px solid var(--color-line);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--color-surface);
   border-radius: var(--radius-lg);
   padding: var(--space-4) var(--space-5);
 }
@@ -376,14 +385,12 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-10);
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  background:
-    linear-gradient(135deg, rgba(233, 120, 33, 0.12), rgba(37, 99, 235, 0.08)),
-    var(--color-surface);
+  background: var(--color-surface);
   box-shadow: var(--shadow-panel);
-  padding: var(--space-12);
+  padding: var(--space-8);
 }
 
 .dashboard-hero__label {
@@ -395,7 +402,7 @@ textarea {
 
 .dashboard-hero h2 {
   max-width: 760px;
-  font-size: clamp(26px, 4vw, 38px);
+  font-size: clamp(24px, 3vw, 34px);
   line-height: 1.12;
 }
 
@@ -407,8 +414,8 @@ textarea {
 
 .tool-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-8);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
   min-width: 0;
 }
 
@@ -1050,15 +1057,15 @@ textarea {
 
 .tool-card {
   min-width: 0;
-  min-height: 226px;
+  min-height: 190px;
   display: grid;
   align-content: space-between;
-  gap: var(--space-8);
+  gap: var(--space-6);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
-  padding: var(--space-8);
+  padding: var(--space-6);
   text-decoration: none;
   transition:
     border-color var(--duration-fast) ease,
@@ -1069,7 +1076,7 @@ textarea {
 .tool-card--link:hover {
   border-color: rgba(233, 120, 33, 0.58);
   box-shadow: var(--shadow-panel);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .tool-card--disabled {
@@ -1168,8 +1175,8 @@ textarea {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.85fr);
-  gap: var(--space-8);
+  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.82fr);
+  gap: var(--space-5);
   align-items: start;
 }
 
@@ -1178,7 +1185,7 @@ textarea {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
-  padding: var(--space-8);
+  padding: var(--space-6);
 }
 
 .panel--wide {
@@ -1187,7 +1194,7 @@ textarea {
 
 .panel--side {
   position: sticky;
-  top: var(--space-8);
+  top: var(--space-6);
 }
 
 .panel__header {
@@ -1195,7 +1202,9 @@ textarea {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-7);
-  margin-bottom: var(--space-7);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-line);
+  padding-bottom: var(--space-5);
 }
 
 .panel h2 {
@@ -1206,7 +1215,7 @@ textarea {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 .field {
@@ -1239,7 +1248,7 @@ textarea {
   border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-ink);
-  min-height: 42px;
+  min-height: 40px;
   padding: var(--space-4) 11px;
   outline: none;
 }
@@ -1317,25 +1326,27 @@ textarea:focus {
 
 .section-list {
   display: grid;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 .saved-pressespiegel {
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(220px, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: end;
-  gap: var(--space-5);
-  margin-bottom: var(--space-7);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface-soft);
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .saved-pressespiegel__actions {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  grid-column: 1 / -1;
+  justify-content: flex-start;
 }
 
 .saved-pressespiegel__actions .button {
@@ -1363,7 +1374,7 @@ textarea:focus {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface-soft);
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .section-item__head {
@@ -1391,7 +1402,7 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
-  margin-bottom: var(--space-7);
+  margin-bottom: var(--space-6);
 }
 
 .summary div {
@@ -1436,8 +1447,8 @@ textarea:focus {
 }
 
 .log {
-  min-height: 220px;
-  max-height: 360px;
+  min-height: 180px;
+  max-height: 320px;
   overflow: auto;
   margin-top: var(--space-6);
   border: 1px solid var(--color-line);
@@ -1457,7 +1468,7 @@ textarea:focus {
 
 @media (max-width: 1180px) {
   .tool-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
 }
 
@@ -1525,11 +1536,16 @@ textarea:focus {
 @media (max-width: 620px) {
   .app-shell,
   .dashboard-shell {
-    width: auto;
-    margin-right: var(--space-7);
-    margin-left: var(--space-7);
-    padding-right: 0;
-    padding-left: 0;
+    width: min(100%, var(--width-page));
+    margin-right: auto;
+    margin-left: auto;
+    padding: var(--space-6);
+  }
+
+  .session-bar {
+    width: calc(100% - var(--space-6) * 2);
+    display: grid;
+    justify-content: stretch;
   }
 
   .form-grid,
@@ -1550,20 +1566,7 @@ textarea:focus {
   }
 
   .dashboard-hero {
-    padding: var(--space-8);
-  }
-
-  .dashboard-hero,
-  .tool-card,
-  .action-panel,
-  .saved-pressespiegel,
-  .participation-form,
-  .document-preview,
-  .concept-panel,
-  .customer-card,
-  .customer-detail__header {
-    width: calc(100vw - (var(--space-12) * 2));
-    max-width: calc(100vw - (var(--space-12) * 2));
+    padding: var(--space-6);
   }
 
   .customer-card__top {
@@ -1596,11 +1599,11 @@ textarea:focus {
   .action-panel p,
   .action-panel .button,
   .action-panel .tool-card__metrics {
-    max-width: calc(100vw - 104px);
+    max-width: 100%;
   }
 
   .action-panel .button {
-    width: calc(100vw - 104px);
+    width: 100%;
   }
 
   .action-panel .tool-card__metrics {
