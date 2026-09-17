@@ -8,16 +8,51 @@
     {% block styles %}{% endblock %}
   </head>
   <body class="{% block body_class %}{% endblock %}">
-    {% block session_bar %}
+    {% block site_nav %}
       {% if session.get("user") %}
-        <nav class="session-bar" aria-label="Angemeldeter Nutzer">
-          <span>{{ session.user.name }}</span>
-          <a href="{{ url_for('logout') }}">Abmelden</a>
-        </nav>
+        <header class="site-nav">
+          <a class="site-nav__brand" href="{{ url_for('dashboard') }}" aria-label="Sportwerk Dashboard">
+            <span aria-hidden="true">SW</span>
+            <strong>Sportwerk</strong>
+          </a>
+          <nav class="site-nav__links" aria-label="Hauptnavigation">
+            <a href="{{ url_for('dashboard') }}" {% if request.endpoint == "dashboard" %}aria-current="page"{% endif %}>Dashboard</a>
+            <a href="{{ url_for('index') }}" {% if request.endpoint == "index" %}aria-current="page"{% endif %}>Pressespiegel</a>
+            <a href="{{ url_for('trello_tool') }}" {% if request.endpoint == "trello_tool" %}aria-current="page"{% endif %}>Trello</a>
+            <a href="{{ url_for('participation_tool') }}" {% if request.endpoint == "participation_tool" %}aria-current="page"{% endif %}>Teilnahmebedingungen</a>
+            <a href="{{ url_for('task_management_tool') }}" {% if request.endpoint == "task_management_tool" %}aria-current="page"{% endif %}>Aufgaben</a>
+          </nav>
+          <div class="site-nav__account">
+            <span>{{ session.user.name }}</span>
+            <a href="{{ url_for('logout') }}">Abmelden</a>
+          </div>
+        </header>
       {% endif %}
     {% endblock %}
 
     {% block content %}{% endblock %}
+
+    {% block footer %}
+      {% if session.get("user") %}
+        <footer class="site-footer">
+          <div class="site-footer__brand">
+            <strong>Sportwerk</strong>
+            <span>Interne Werkzeugzentrale</span>
+          </div>
+          <nav class="site-footer__links" aria-label="Footer Navigation">
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('index') }}">Pressespiegel</a>
+            <a href="{{ url_for('trello_tool') }}">Trello</a>
+            <a href="{{ url_for('participation_tool') }}">Dokumente</a>
+            <a href="{{ url_for('logout') }}">Abmelden</a>
+          </nav>
+          <div class="site-footer__meta">
+            <span>{{ session.user.email or session.user.name }}</span>
+            <span>Local</span>
+          </div>
+        </footer>
+      {% endif %}
+    {% endblock %}
     {% block scripts %}{% endblock %}
   </body>
 </html>
