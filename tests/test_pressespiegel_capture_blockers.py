@@ -55,6 +55,21 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             "https://www.freiepresse.de/cdn/hero-large.webp",
         )
 
+    def test_lvz_url_is_recognized_for_source_login(self) -> None:
+        self.assertTrue(
+            pressespiegel.is_lvz_url(
+                "https://www.lvz.de/lokales/leipzig/beispiel-artikel-ABC123.html"
+            )
+        )
+        self.assertTrue(pressespiegel.is_lvz_url("https://epaper.lvz.de/beispiel"))
+        self.assertFalse(pressespiegel.is_lvz_url("https://www.freiepresse.de/beispiel"))
+
+    def test_lvz_auth_state_accepts_persistent_profile(self) -> None:
+        with patch.object(type(pressespiegel.LVZ_STORAGE_STATE_PATH), "exists", return_value=False), patch.object(
+            pressespiegel, "has_persistent_profile_state", return_value=True
+        ):
+            self.assertTrue(pressespiegel.has_lvz_auth_state())
+
     def test_text_fallback_uses_layout_accent_color(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "fallback.png"

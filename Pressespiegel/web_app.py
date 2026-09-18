@@ -30,12 +30,16 @@ from werkzeug.utils import secure_filename
 from main import (
     FREIE_PRESSE_LOGIN_URL,
     FREIE_PRESSE_PROFILE_DIR,
+    LVZ_LOGIN_URL,
+    LVZ_PROFILE_DIR,
     SAECHSISCHE_LOGIN_URL,
     SAECHSISCHE_PROFILE_DIR,
     freie_presse_storage_state_path,
     has_persistent_profile_state,
     has_freie_presse_auth_state,
+    has_lvz_auth_state,
     has_saechsische_auth_state,
+    lvz_storage_state_path,
     PDF_FONT_FAMILIES,
     PDF_LAYOUTS,
     PdfLayout,
@@ -115,6 +119,13 @@ FREIE_PRESSE_AUTH_JOB: dict[str, Any] = {
 }
 SAECHSISCHE_AUTH_LOCK = threading.Lock()
 SAECHSISCHE_AUTH_JOB: dict[str, Any] = {
+    "state": "idle",
+    "message": "Kein Loginvorgang aktiv.",
+    "started_at": None,
+    "updated_at": None,
+}
+LVZ_AUTH_LOCK = threading.Lock()
+LVZ_AUTH_JOB: dict[str, Any] = {
     "state": "idle",
     "message": "Kein Loginvorgang aktiv.",
     "started_at": None,
@@ -259,6 +270,21 @@ def set_saechsische_auth_job(state: str, message: str) -> None:
             SAECHSISCHE_AUTH_JOB["started_at"] = datetime.now().isoformat()
         if state in {"idle", "finished", "failed"}:
             SAECHSISCHE_AUTH_JOB["started_at"] = None
+
+
+def set_lvz_auth_job(state: str, message: str) -> None:
+    with LVZ_AUTH_LOCK:
+        LVZ_AUTH_JOB.update(
+            {
+                "state": state,
+                "message": message,
+                "updated_at": datetime.now().isoformat(),
+            }
+        )
+        if state == "running" and not LVZ_AUTH_JOB.get("started_at"):
+            LVZ_AUTH_JOB["started_at"] = datetime.now().isoformat()
+        if state in {"idle", "finished", "failed"}:
+            LVZ_AUTH_JOB["started_at"] = None
 
 
 def login_context_is_open(context) -> bool:
@@ -428,6 +454,15 @@ async def run_saechsische_login_capture() -> None:
     )
 
 
+async def run_lvz_login_capture() -> None:
+    await run_external_browser_login_capture(
+        label="Leipziger-Volkszeitung",
+        login_url=LVZ_LOGIN_URL,
+        profile_dir=LVZ_PROFILE_DIR,
+        set_job=set_lvz_auth_job,
+    )
+
+
 def start_freie_presse_login_thread() -> bool:
     with FREIE_PRESSE_AUTH_LOCK:
         if FREIE_PRESSE_AUTH_JOB.get("state") == "running":
@@ -472,6 +507,28 @@ def start_saechsische_login_thread() -> bool:
     return True
 
 
+def start_lvz_login_thread() -> bool:
+    with LVZ_AUTH_LOCK:
+        if LVZ_AUTH_JOB.get("state") == "running":
+            return False
+        LVZ_AUTH_JOB.update(
+            {
+                "state": "running",
+                "message": "Loginfenster wird vorbereitet.",
+                "started_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+        )
+
+    thread = threading.Thread(
+        target=lambda: asyncio.run(run_lvz_login_capture()),
+        name="LvzAuth",
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
 def freie_presse_auth_status_payload() -> dict[str, Any]:
     storage_state_path = freie_presse_storage_state_path()
     with FREIE_PRESSE_AUTH_LOCK:
@@ -497,6 +554,25 @@ def saechsische_auth_status_payload() -> dict[str, Any]:
         job = dict(SAECHSISCHE_AUTH_JOB)
     return {
         "configured": has_saechsische_auth_state(),
+        "state": job.get("state", "idle"),
+        "message": job.get("message") or "",
+        "started_at": job.get("started_at"),
+        "updated_at": job.get("updated_at"),
+        "storage_state_path": str(storage_state_path),
+        "storage_state_updated_at": (
+            iso_from_timestamp(storage_state_path.stat().st_mtime)
+            if storage_state_path.exists()
+            else None
+        ),
+    }
+
+
+def lvz_auth_status_payload() -> dict[str, Any]:
+    storage_state_path = lvz_storage_state_path()
+    with LVZ_AUTH_LOCK:
+        job = dict(LVZ_AUTH_JOB)
+    return {
+        "configured": has_lvz_auth_state(),
         "state": job.get("state", "idle"),
         "message": job.get("message") or "",
         "started_at": job.get("started_at"),
@@ -1447,6 +1523,21 @@ def start_saechsische_auth():
     payload["started"] = started
     if not started:
         payload["message"] = "Sächsische-Zeitung-Login laeuft bereits."
+    return jsonify(payload)
+
+
+@app.get("/pressespiegel/auth/lvz")
+def lvz_auth_status():
+    return jsonify(lvz_auth_status_payload())
+
+
+@app.post("/pressespiegel/auth/lvz/start")
+def start_lvz_auth():
+    started = start_lvz_login_thread()
+    payload = lvz_auth_status_payload()
+    payload["started"] = started
+    if not started:
+        payload["message"] = "Leipziger-Volkszeitung-Login laeuft bereits."
     return jsonify(payload)
 
 

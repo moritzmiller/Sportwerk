@@ -82,6 +82,10 @@ SAECHSISCHE_AUTH_DIR = INSTANCE_DIR / "auth" / "saechsische"
 SAECHSISCHE_PROFILE_DIR = SAECHSISCHE_AUTH_DIR / "human-profile"
 SAECHSISCHE_STORAGE_STATE_PATH = SAECHSISCHE_AUTH_DIR / "storage_state.json"
 SAECHSISCHE_LOGIN_URL = "https://www.saechsische.de/"
+LVZ_AUTH_DIR = INSTANCE_DIR / "auth" / "lvz"
+LVZ_PROFILE_DIR = LVZ_AUTH_DIR / "human-profile"
+LVZ_STORAGE_STATE_PATH = LVZ_AUTH_DIR / "storage_state.json"
+LVZ_LOGIN_URL = "https://www.lvz.de/"
 BROWSER_CONTEXT_OPTIONS = {
     "viewport": {"width": 1440, "height": 1000},
     "screen": {"width": 1440, "height": 1000},
@@ -119,6 +123,22 @@ def saechsische_storage_state_path() -> Path:
 
 def has_saechsische_auth_state() -> bool:
     return has_persistent_profile_state(SAECHSISCHE_PROFILE_DIR)
+
+
+def is_lvz_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname == "lvz.de" or hostname.endswith(".lvz.de")
+
+
+def lvz_storage_state_path() -> Path:
+    return LVZ_STORAGE_STATE_PATH
+
+
+def has_lvz_auth_state() -> bool:
+    return (
+        LVZ_STORAGE_STATE_PATH.exists()
+        and LVZ_STORAGE_STATE_PATH.stat().st_size > 0
+    ) or has_persistent_profile_state(LVZ_PROFILE_DIR)
 
 
 def source_login_context_options() -> dict:
@@ -3359,6 +3379,7 @@ async def core_build_pressespiegel(
                 context = await create_pressespiegel_context(browser)
                 freie_presse_context = None
                 saechsische_context = None
+                lvz_context = None
 
                 try:
                     for index, (url, section_heading) in enumerate(article_jobs, start=1):
@@ -3406,6 +3427,22 @@ async def core_build_pressespiegel(
                                         "Sächsische Zeitung: kein gespeicherter Login vorhanden. "
                                         "Bitte den Zugang im Pressespiegel autorisieren."
                                     )
+                            elif is_lvz_url(url):
+                                if has_lvz_auth_state():
+                                    if lvz_context is None:
+                                        lvz_context = await create_source_pressespiegel_context(
+                                            playwright,
+                                            browser,
+                                            LVZ_PROFILE_DIR,
+                                            lvz_storage_state_path(),
+                                        )
+                                    article_context = lvz_context
+                                    log_callback("Leipziger Volkszeitung: gespeicherter Login wird verwendet.")
+                                else:
+                                    log_callback(
+                                        "Leipziger Volkszeitung: kein gespeicherter Login vorhanden. "
+                                        "Bitte den Zugang im Pressespiegel autorisieren."
+                                    )
                             article = await capture_article(
                                 article_context,
                                 url,
@@ -3442,6 +3479,8 @@ async def core_build_pressespiegel(
                         await freie_presse_context.close()
                     if saechsische_context is not None:
                         await saechsische_context.close()
+                    if lvz_context is not None:
+                        await lvz_context.close()
                     await context.close()
                     await browser.close()
 
