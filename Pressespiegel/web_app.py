@@ -9,6 +9,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 import uuid
 import zipfile
 from datetime import datetime
@@ -20,10 +21,16 @@ import requests
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from playwright.async_api import async_playwright
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from main import (
+    BROWSER_CONTEXT_OPTIONS,
+    FREIE_PRESSE_LOGIN_URL,
+    FREIE_PRESSE_PROFILE_DIR,
+    freie_presse_storage_state_path,
+    has_freie_presse_auth_state,
     PDF_FONT_FAMILIES,
     PDF_LAYOUTS,
     PdfLayout,
@@ -92,6 +99,13 @@ app.config["PREFERRED_URL_SCHEME"] = (
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
 SAVED_PRESSESPIEGEL_LOCK = threading.Lock()
+FREIE_PRESSE_AUTH_LOCK = threading.Lock()
+FREIE_PRESSE_AUTH_JOB: dict[str, Any] = {
+    "state": "idle",
+    "message": "Kein Loginvorgang aktiv.",
+    "started_at": None,
+    "updated_at": None,
+}
 TRELLO_JOBS: dict[str, dict[str, Any]] = {}
 TRELLO_JOBS_LOCK = threading.Lock()
 PARTICIPATION_JOBS: dict[str, dict[str, Any]] = {}
@@ -195,6 +209,108 @@ def save_saved_pressespiegel_items(items: list[dict[str, Any]]) -> None:
         encoding="utf-8",
     )
     temp_path.replace(SAVED_PRESSESPIEGEL_PATH)
+
+
+def iso_from_timestamp(timestamp: float | None) -> str | None:
+    if not timestamp:
+        return None
+    return datetime.fromtimestamp(timestamp).isoformat()
+
+
+def set_freie_presse_auth_job(state: str, message: str) -> None:
+    with FREIE_PRESSE_AUTH_LOCK:
+        FREIE_PRESSE_AUTH_JOB.update(
+            {
+                "state": state,
+                "message": message,
+                "updated_at": datetime.now().isoformat(),
+            }
+        )
+        if state == "running" and not FREIE_PRESSE_AUTH_JOB.get("started_at"):
+            FREIE_PRESSE_AUTH_JOB["started_at"] = datetime.now().isoformat()
+        if state in {"idle", "finished", "failed"}:
+            FREIE_PRESSE_AUTH_JOB["started_at"] = None
+
+
+async def run_freie_presse_login_capture() -> None:
+    storage_state_path = freie_presse_storage_state_path()
+    storage_state_path.parent.mkdir(parents=True, exist_ok=True)
+    FREIE_PRESSE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
+    set_freie_presse_auth_job("running", "Loginfenster wird geoeffnet.")
+    try:
+        async with async_playwright() as playwright:
+            context = await playwright.chromium.launch_persistent_context(
+                user_data_dir=str(FREIE_PRESSE_PROFILE_DIR),
+                headless=False,
+                **BROWSER_CONTEXT_OPTIONS,
+            )
+            try:
+                page = context.pages[0] if context.pages else await context.new_page()
+                await page.goto(FREIE_PRESSE_LOGIN_URL, wait_until="domcontentloaded", timeout=45_000)
+                set_freie_presse_auth_job(
+                    "running",
+                    "Loginfenster ist offen. Nach dem Einloggen kann das Fenster geschlossen werden.",
+                )
+
+                deadline = time.monotonic() + 15 * 60
+                while time.monotonic() < deadline:
+                    await context.storage_state(path=str(storage_state_path))
+                    if not context.pages or all(open_page.is_closed() for open_page in context.pages):
+                        break
+                    await asyncio.sleep(5)
+
+                await context.storage_state(path=str(storage_state_path))
+            finally:
+                await context.close()
+
+        set_freie_presse_auth_job("finished", "Freie-Presse-Login wurde gespeichert.")
+    except Exception as exc:
+        set_freie_presse_auth_job(
+            "failed",
+            f"Freie-Presse-Login konnte nicht gespeichert werden: {exc}",
+        )
+
+
+def start_freie_presse_login_thread() -> bool:
+    with FREIE_PRESSE_AUTH_LOCK:
+        if FREIE_PRESSE_AUTH_JOB.get("state") == "running":
+            return False
+        FREIE_PRESSE_AUTH_JOB.update(
+            {
+                "state": "running",
+                "message": "Loginfenster wird vorbereitet.",
+                "started_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+        )
+
+    thread = threading.Thread(
+        target=lambda: asyncio.run(run_freie_presse_login_capture()),
+        name="FreiePresseAuth",
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
+def freie_presse_auth_status_payload() -> dict[str, Any]:
+    storage_state_path = freie_presse_storage_state_path()
+    with FREIE_PRESSE_AUTH_LOCK:
+        job = dict(FREIE_PRESSE_AUTH_JOB)
+    return {
+        "configured": has_freie_presse_auth_state(),
+        "state": job.get("state", "idle"),
+        "message": job.get("message") or "",
+        "started_at": job.get("started_at"),
+        "updated_at": job.get("updated_at"),
+        "storage_state_path": str(storage_state_path),
+        "storage_state_updated_at": (
+            iso_from_timestamp(storage_state_path.stat().st_mtime)
+            if storage_state_path.exists()
+            else None
+        ),
+    }
 
 
 def saved_pressespiegel_url_count(item: dict[str, Any]) -> int:
@@ -409,7 +525,9 @@ def is_auth_configured() -> bool:
 
 
 def wants_json_response() -> bool:
-    return request.path.startswith(("/jobs", "/pressespiegel/saved", "/trello/jobs", "/teilnahmebedingungen/jobs")) or (
+    return request.path.startswith(
+        ("/jobs", "/pressespiegel/saved", "/pressespiegel/auth", "/trello/jobs", "/teilnahmebedingungen/jobs")
+    ) or (
         request.accept_mimetypes.best == "application/json"
         and request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
     )
@@ -1004,6 +1122,21 @@ def delete_saved_pressespiegel(saved_id: str):
             return jsonify({"error": "Gespeicherter Pressespiegel nicht gefunden."}), 404
         save_saved_pressespiegel_items(next_items)
     return jsonify({"success": True})
+
+
+@app.get("/pressespiegel/auth/freiepresse")
+def freie_presse_auth_status():
+    return jsonify(freie_presse_auth_status_payload())
+
+
+@app.post("/pressespiegel/auth/freiepresse/start")
+def start_freie_presse_auth():
+    started = start_freie_presse_login_thread()
+    payload = freie_presse_auth_status_payload()
+    payload["started"] = started
+    if not started:
+        payload["message"] = "Freie-Presse-Login laeuft bereits."
+    return jsonify(payload)
 
 
 @app.post("/jobs")

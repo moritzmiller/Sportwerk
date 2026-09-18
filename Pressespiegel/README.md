@@ -38,7 +38,9 @@ Der Bereich `URLs ohne Abschnitte` bleibt als Fallback erhalten. Sobald mindeste
 
 Wenn ein Artikel hinter einer Paywall oder Anmeldung liegt oder der Seitenscreenshot nur den reinen Artikelkörper enthält, versucht die App zuerst frei verfügbare strukturierte Artikeldaten zu verwenden. Sind dort Überschrift, Titelbild, Teaser und ausreichender Artikeltext enthalten, wird daraus ein lesbares Artikelbild für das PDF erzeugt.
 
-Wenn der Volltext nicht frei verfügbar ist, fügt die App statt eines leeren Kastens eine Paywall-Hinweisseite in das PDF ein. Diese enthält Quelle, Datum, URL, Überschrift und frei sichtbaren Teaser. Geschützte Inhalte werden nicht automatisiert entsperrt oder umgangen.
+Für die Freie Presse kann ein berechtigter Zugang einmalig in der Web-Oberfläche autorisiert werden. Der Button `Login erneuern` öffnet ein Playwright-Browserfenster, in dem ein Admin den Verlag normal anmeldet. Die App speichert danach nur die Browser-Sitzung unter `instance/auth/freiepresse/` und nutzt sie automatisch für `freiepresse.de`-Artikel. Zugangsdaten werden nicht im Code oder in der Pressespiegel-Konfiguration gespeichert.
+
+Wenn kein autorisierter Zugang vorhanden ist oder der gespeicherte Login abgelaufen ist, fügt die App statt eines leeren Kastens eine Paywall-Hinweisseite in das PDF ein. Diese enthält Quelle, Datum, URL, Überschrift und frei sichtbaren Teaser.
 
 ## Layouts
 

@@ -10,8 +10,10 @@ import subprocess
 import sys
 import tempfile
 import threading
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -68,6 +70,41 @@ StatusCallback = Callable[[str], None]
 ProgressCallback = Callable[[float], None]
 LogCallback = Callable[[str], None]
 
+PRESS_DIR = Path(__file__).resolve().parent
+INSTANCE_DIR = PRESS_DIR / "instance"
+FREIE_PRESSE_AUTH_DIR = INSTANCE_DIR / "auth" / "freiepresse"
+FREIE_PRESSE_PROFILE_DIR = FREIE_PRESSE_AUTH_DIR / "profile"
+FREIE_PRESSE_STORAGE_STATE_PATH = FREIE_PRESSE_AUTH_DIR / "storage_state.json"
+FREIE_PRESSE_LOGIN_URL = "https://www.freiepresse.de/"
+FREIE_PRESSE_DOMAINS = {"freiepresse.de", "www.freiepresse.de"}
+BROWSER_CONTEXT_OPTIONS = {
+    "viewport": {"width": 1440, "height": 1000},
+    "screen": {"width": 1440, "height": 1000},
+    "locale": "de-DE",
+    "color_scheme": "light",
+    "device_scale_factor": 1,
+}
+
+
+def is_freie_presse_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    return hostname == "freiepresse.de" or hostname.endswith(".freiepresse.de")
+
+
+def freie_presse_storage_state_path() -> Path:
+    return FREIE_PRESSE_STORAGE_STATE_PATH
+
+
+def has_freie_presse_auth_state() -> bool:
+    return FREIE_PRESSE_STORAGE_STATE_PATH.exists() and FREIE_PRESSE_STORAGE_STATE_PATH.stat().st_size > 0
+
+
+async def create_pressespiegel_context(browser, storage_state_path: Path | None = None):
+    options = dict(BROWSER_CONTEXT_OPTIONS)
+    if storage_state_path and storage_state_path.exists():
+        options["storage_state"] = str(storage_state_path)
+    return await browser.new_context(**options)
+
 
 if sys.platform.startswith("win"):
     try:
@@ -121,6 +158,15 @@ class SectionPlanEntry:
 class ArticleTextBlock:
     kind: str
     text: str
+
+
+@dataclass(slots=True)
+class RssArticleFallback:
+    title: str
+    site_name: str
+    article_date: str
+    description: str
+    image_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -543,11 +589,7 @@ def extract_article_image_url(html_content: str, base_url: str) -> str | None:
     return None
 
 
-def download_article_hero_image(html_content: str, page_url: str, destination: Path) -> Path | None:
-    image_url = extract_article_image_url(html_content, page_url)
-    if not image_url:
-        return None
-
+def download_remote_image(image_url: str, page_url: str, destination: Path) -> Path | None:
     try:
         request = Request(
             image_url,
@@ -573,6 +615,166 @@ def download_article_hero_image(html_content: str, page_url: str, destination: P
 
     return destination if destination.exists() else None
 
+
+def download_article_hero_image(html_content: str, page_url: str, destination: Path) -> Path | None:
+    image_url = extract_article_image_url(html_content, page_url)
+    if not image_url:
+        return None
+    return download_remote_image(image_url, page_url, destination)
+
+
+def is_saechsische_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname == "saechsische.de" or hostname.endswith(".saechsische.de")
+
+
+def saechsische_rss_feed_candidates(url: str) -> list[str]:
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+    feed_base = "https://www.saechsische.de/arc/outboundfeeds/rss"
+    candidates: list[str] = []
+
+    if len(path_parts) >= 2:
+        candidates.append(f"{feed_base}/category/{path_parts[0]}/{path_parts[1]}/")
+    if path_parts:
+        candidates.append(f"{feed_base}/category/{path_parts[0]}/")
+    candidates.append(f"{feed_base}/")
+
+    unique_candidates: list[str] = []
+    for candidate in candidates:
+        if candidate not in unique_candidates:
+            unique_candidates.append(candidate)
+    return unique_candidates
+
+
+def _rss_item_text(item: ET.Element, tag_name: str) -> str:
+    value = item.findtext(tag_name) or ""
+    return _clean_article_text(value)
+
+
+def _rss_item_date(item: ET.Element) -> str:
+    raw_date = item.findtext("pubDate")
+    if raw_date:
+        try:
+            return parsedate_to_datetime(raw_date).strftime("%d.%m.%Y")
+        except (TypeError, ValueError):
+            pass
+    return _format_date(raw_date)
+
+
+def _rss_item_image_url(item: ET.Element) -> str | None:
+    namespaces = {"media": "http://search.yahoo.com/mrss/"}
+    media = item.find("media:content", namespaces)
+    if media is not None:
+        image_url = (media.attrib.get("url") or "").strip()
+        if image_url:
+            return image_url
+    enclosure = item.find("enclosure")
+    if enclosure is not None:
+        image_url = (enclosure.attrib.get("url") or "").strip()
+        content_type = (enclosure.attrib.get("type") or "").lower()
+        if image_url and (not content_type or content_type.startswith("image/")):
+            return image_url
+    return None
+
+
+def fetch_saechsische_rss_article(url: str) -> RssArticleFallback | None:
+    if not is_saechsische_url(url):
+        return None
+
+    normalized_url = normalize_url(url) or url
+    parsed = urlparse(normalized_url)
+    slug_token = Path(parsed.path).stem
+    request_headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+    }
+
+    for feed_url in saechsische_rss_feed_candidates(normalized_url):
+        try:
+            request = Request(feed_url, headers=request_headers)
+            with urlopen(request, timeout=20) as response:
+                payload = response.read(1_500_000)
+        except OSError:
+            continue
+
+        try:
+            root = ET.fromstring(payload)
+        except ET.ParseError:
+            continue
+
+        for item in root.findall("./channel/item"):
+            item_link = (item.findtext("link") or item.findtext("guid") or "").strip()
+            item_normalized = normalize_url(item_link) or item_link
+            if item_normalized != normalized_url and (not slug_token or slug_token not in item_link):
+                continue
+
+            title = _rss_item_text(item, "title") or "Sächsische.de Artikel"
+            description = _rss_item_text(item, "description")
+            return RssArticleFallback(
+                title=title,
+                site_name="Sächsische.de",
+                article_date=_rss_item_date(item),
+                description=description,
+                image_url=_rss_item_image_url(item),
+            )
+    return None
+
+
+def render_saechsische_rss_fallback(
+    image_path: Path,
+    url: str,
+    article: RssArticleFallback,
+) -> bool:
+    blocks = [ArticleTextBlock(kind="headline", text=article.title)]
+    if article.description:
+        blocks.append(ArticleTextBlock(kind="lead", text=article.description))
+
+    hero_image_path = None
+    if article.image_url:
+        hero_image_path = download_remote_image(
+            article.image_url,
+            url,
+            image_path.with_name(f"{image_path.stem}_rss_hero.png"),
+        )
+
+    return render_article_text_fallback(
+        image_path,
+        article.title,
+        article.site_name,
+        article.article_date,
+        url,
+        blocks,
+        hero_image_path,
+    )
+
+
+def build_saechsische_rss_article_result(
+    url: str,
+    image_path: Path,
+    source_logo: Path | None,
+    logo_warning: str | None,
+) -> ArticleResult | None:
+    article = fetch_saechsische_rss_article(url)
+    if not article:
+        return None
+    if not render_saechsische_rss_fallback(image_path, url, article):
+        return None
+
+    return ArticleResult(
+        url=url,
+        title=article.title,
+        site_name=article.site_name,
+        article_date=article.article_date,
+        image_path=image_path,
+        logo_path=source_logo,
+        capture_note=(
+            "Sächsische.de blockierte den Direktabruf: "
+            "Metadaten aus dem offiziellen RSS-Feed wurden als Fallback eingefuegt."
+        ),
+        logo_warning=logo_warning,
+    )
 
 def has_paywall_marker(html_content: str, visible_text: str = "") -> bool:
     """Erkennt Paywall-/Login-Sperren, ohne Schutzmechanismen zu umgehen."""
@@ -1791,6 +1993,9 @@ async def capture_article(
                     f"Logo fehlt fuer {site_name}. "
                     "Bitte fuege eine passende PNG-Datei in den Logo-Ordner ein."
                 )
+            rss_result = build_saechsische_rss_article_result(url, image_path, source_logo, logo_warning)
+            if rss_result:
+                return rss_result
             if render_link_error_fallback(image_path, site_name, url, error_message):
                 return ArticleResult(
                     url=url,
@@ -2966,13 +3171,8 @@ async def core_build_pressespiegel(
 
             async with async_playwright() as playwright:
                 browser = await playwright.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    viewport={"width": 1440, "height": 1000},
-                    screen={"width": 1440, "height": 1000},
-                    locale="de-DE",
-                    color_scheme="light",
-                    device_scale_factor=1,
-                )
+                context = await create_pressespiegel_context(browser)
+                freie_presse_context = None
 
                 try:
                     for index, (url, section_heading) in enumerate(article_jobs, start=1):
@@ -2987,8 +3187,23 @@ async def core_build_pressespiegel(
 
                         image_path = temp_dir / f"article_{index:03d}.png"
                         try:
+                            article_context = context
+                            if is_freie_presse_url(url):
+                                if has_freie_presse_auth_state():
+                                    if freie_presse_context is None:
+                                        freie_presse_context = await create_pressespiegel_context(
+                                            browser,
+                                            freie_presse_storage_state_path(),
+                                        )
+                                    article_context = freie_presse_context
+                                    log_callback("Freie Presse: gespeicherter Login wird verwendet.")
+                                else:
+                                    log_callback(
+                                        "Freie Presse: kein gespeicherter Login vorhanden. "
+                                        "Bitte den Zugang im Pressespiegel autorisieren."
+                                    )
                             article = await capture_article(
-                                context,
+                                article_context,
                                 url,
                                 image_path,
                                 source_logo_index,
@@ -3018,6 +3233,8 @@ async def core_build_pressespiegel(
 
                         progress_callback((index / total_urls) * 80)
                 finally:
+                    if freie_presse_context is not None:
+                        await freie_presse_context.close()
                     await context.close()
                     await browser.close()
 

@@ -20,6 +20,9 @@ const savedStatus = document.querySelector("#saved-pressespiegel-status");
 const loadPressespiegelButton = document.querySelector("#load-pressespiegel");
 const savePressespiegelButton = document.querySelector("#save-pressespiegel");
 const deletePressespiegelButton = document.querySelector("#delete-pressespiegel");
+const freiePresseAuthState = document.querySelector("#freiepresse-auth-state");
+const freiePresseAuthMessage = document.querySelector("#freiepresse-auth-message");
+const freiePresseAuthStart = document.querySelector("#freiepresse-auth-start");
 let savedPressespiegel = Array.isArray(savedPressespiegelData) ? savedPressespiegelData : [];
 let currentSavedPressespiegelId = "";
 let displayedProgress = 0;
@@ -91,6 +94,78 @@ function applyLayout(layoutId) {
 function setSavedStatus(message, tone = "neutral") {
   savedStatus.textContent = message;
   savedStatus.dataset.tone = tone;
+}
+
+function setFreiePresseAuthStatus(payload) {
+  if (!freiePresseAuthState || !freiePresseAuthMessage || !freiePresseAuthStart) {
+    return;
+  }
+
+  const isRunning = payload.state === "running";
+  freiePresseAuthStart.disabled = isRunning;
+  freiePresseAuthState.dataset.state = payload.configured ? "ready" : payload.state || "idle";
+  freiePresseAuthState.textContent = payload.configured ? "Login gespeichert" : "Nicht verbunden";
+  if (isRunning) {
+    freiePresseAuthState.textContent = "Login läuft";
+  }
+  if (payload.state === "failed") {
+    freiePresseAuthState.textContent = "Fehler";
+  }
+  freiePresseAuthMessage.textContent = payload.message || "";
+  freiePresseAuthMessage.dataset.state = payload.state || "idle";
+}
+
+async function refreshFreiePresseAuthStatus() {
+  if (!freiePresseAuthState) {
+    return;
+  }
+  try {
+    const response = await fetch("/pressespiegel/auth/freiepresse");
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Status konnte nicht geladen werden.");
+    }
+    setFreiePresseAuthStatus(payload);
+    if (payload.state === "running") {
+      window.setTimeout(refreshFreiePresseAuthStatus, 3000);
+    }
+  } catch (error) {
+    setFreiePresseAuthStatus({
+      configured: false,
+      state: "failed",
+      message: error.message || "Freie-Presse-Status konnte nicht geladen werden.",
+    });
+  }
+}
+
+async function startFreiePresseAuth() {
+  if (!freiePresseAuthStart) {
+    return;
+  }
+  freiePresseAuthStart.disabled = true;
+  setFreiePresseAuthStatus({
+    configured: false,
+    state: "running",
+    message: "Loginfenster wird vorbereitet.",
+  });
+
+  try {
+    const response = await fetch("/pressespiegel/auth/freiepresse/start", {
+      method: "POST",
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Login konnte nicht gestartet werden.");
+    }
+    setFreiePresseAuthStatus(payload);
+    window.setTimeout(refreshFreiePresseAuthStatus, 3000);
+  } catch (error) {
+    setFreiePresseAuthStatus({
+      configured: false,
+      state: "failed",
+      message: error.message || "Login konnte nicht gestartet werden.",
+    });
+  }
 }
 
 function renderSavedPressespiegelOptions() {
@@ -338,6 +413,9 @@ savedSelect.addEventListener("change", loadSelectedPressespiegel);
 loadPressespiegelButton.addEventListener("click", loadSelectedPressespiegel);
 savePressespiegelButton.addEventListener("click", saveCurrentPressespiegel);
 deletePressespiegelButton.addEventListener("click", deleteSelectedPressespiegel);
+if (freiePresseAuthStart) {
+  freiePresseAuthStart.addEventListener("click", startFreiePresseAuth);
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -367,3 +445,4 @@ form.addEventListener("submit", async (event) => {
 addSection("Regionale Presse", "");
 applyLayout(layoutSelect.value);
 renderSavedPressespiegelOptions();
+refreshFreiePresseAuthStatus();

@@ -1607,6 +1607,56 @@ textarea:focus {
   color: var(--color-danger);
 }
 
+.source-auth {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  margin: calc(var(--space-5) * -1) 0 var(--space-7);
+  border: 1px solid rgba(31, 111, 235, 0.18);
+  border-radius: var(--radius-md);
+  background: #f7faff;
+  padding: var(--space-4) var(--space-5);
+}
+
+.source-auth__meta {
+  display: grid;
+  gap: 3px;
+}
+
+.source-auth__meta span {
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.source-auth__meta strong {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.source-auth__meta strong[data-state="ready"] {
+  color: var(--color-green);
+}
+
+.source-auth__meta strong[data-state="running"] {
+  color: var(--color-focus);
+}
+
+.source-auth__message {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  margin: calc(var(--space-2) * -1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.source-auth__message[data-state="failed"] {
+  color: var(--color-danger);
+}
+
 .section-item {
   border: 1px solid rgba(207, 214, 225, 0.94);
   border-radius: var(--radius-lg);
@@ -1889,6 +1939,7 @@ textarea:focus {
   .form-grid,
   .section-item__head,
   .saved-pressespiegel,
+  .source-auth,
   .summary,
   .tool-grid,
   .action-grid,

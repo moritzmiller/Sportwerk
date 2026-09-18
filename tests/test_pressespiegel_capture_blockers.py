@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,74 @@ from playwright.async_api import Error as PlaywrightError  # noqa: E402
 from playwright.async_api import async_playwright  # noqa: E402
 
 
+class FakeUrlopenResponse:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.headers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _limit: int | None = None) -> bytes:
+        return self.payload
+
+
 class PressespiegelCaptureBlockerTests(unittest.TestCase):
+    def test_saechsische_url_uses_matching_arc_rss_feed(self) -> None:
+        url = (
+            "https://www.saechsische.de/sport/regional/"
+            "eiskanal-altenberg-zwei-weltcups-im-winter-2026-27-auftakt-mit-wulff-comeback-nach-dopingsperre-"
+            "DCQ6YTVOHFDITIDI6EQ4PBKDFY.html"
+        )
+
+        self.assertEqual(
+            pressespiegel.saechsische_rss_feed_candidates(url)[0],
+            "https://www.saechsische.de/arc/outboundfeeds/rss/category/sport/regional/",
+        )
+
+    def test_saechsische_rss_article_is_extracted_from_official_feed(self) -> None:
+        url = (
+            "https://www.saechsische.de/sport/regional/"
+            "eiskanal-altenberg-zwei-weltcups-im-winter-2026-27-auftakt-mit-wulff-comeback-nach-dopingsperre-"
+            "DCQ6YTVOHFDITIDI6EQ4PBKDFY.html"
+        )
+        rss_payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <rss xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+          <channel>
+            <item>
+              <title><![CDATA[Eiskanal Altenberg: Zwei Weltcups im Winter 2026/27]]></title>
+              <link>{url}</link>
+              <guid isPermaLink="true">{url}</guid>
+              <description><![CDATA[Von November bis Februar finden am Eiskanal Altenberg zwei Weltcups statt.]]></description>
+              <pubDate>Thu, 17 Sep 2026 17:55:00 +0200</pubDate>
+              <media:content type="image/jpeg" url="https://www.saechsische.de/resizer/example.jpeg" />
+            </item>
+          </channel>
+        </rss>""".encode("utf-8")
+        requested_urls: list[str] = []
+
+        def fake_urlopen(request, timeout=20):
+            requested_urls.append(request.full_url)
+            return FakeUrlopenResponse(rss_payload)
+
+        with patch.object(pressespiegel, "urlopen", fake_urlopen):
+            article = pressespiegel.fetch_saechsische_rss_article(url)
+
+        self.assertIsNotNone(article)
+        assert article is not None
+        self.assertIn("Eiskanal Altenberg", article.title)
+        self.assertEqual(article.site_name, "Sächsische.de")
+        self.assertEqual(article.article_date, "17.09.2026")
+        self.assertIn("zwei Weltcups", article.description)
+        self.assertEqual(article.image_url, "https://www.saechsische.de/resizer/example.jpeg")
+        self.assertEqual(
+            requested_urls[0],
+            "https://www.saechsische.de/arc/outboundfeeds/rss/category/sport/regional/",
+        )
+
     def test_rhz_ad_or_premium_prompt_is_paywall_marker(self) -> None:
         html = """
         <html>
