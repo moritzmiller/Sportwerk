@@ -70,6 +70,21 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
         ):
             self.assertTrue(pressespiegel.has_lvz_auth_state())
 
+    def test_radio_dresden_url_is_recognized_for_source_login(self) -> None:
+        self.assertTrue(
+            pressespiegel.is_radio_dresden_url(
+                "https://www.radiodresden.de/beitrag/dynamo-dresden-beispiel-123456/"
+            )
+        )
+        self.assertTrue(pressespiegel.is_radio_dresden_url("https://app.radiodresden.de/beispiel"))
+        self.assertFalse(pressespiegel.is_radio_dresden_url("https://www.lvz.de/beispiel"))
+
+    def test_radio_dresden_auth_state_accepts_persistent_profile(self) -> None:
+        with patch.object(
+            type(pressespiegel.RADIO_DRESDEN_STORAGE_STATE_PATH), "exists", return_value=False
+        ), patch.object(pressespiegel, "has_persistent_profile_state", return_value=True):
+            self.assertTrue(pressespiegel.has_radio_dresden_auth_state())
+
     def test_text_fallback_uses_layout_accent_color(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "fallback.png"

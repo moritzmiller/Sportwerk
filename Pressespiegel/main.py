@@ -86,6 +86,10 @@ LVZ_AUTH_DIR = INSTANCE_DIR / "auth" / "lvz"
 LVZ_PROFILE_DIR = LVZ_AUTH_DIR / "human-profile"
 LVZ_STORAGE_STATE_PATH = LVZ_AUTH_DIR / "storage_state.json"
 LVZ_LOGIN_URL = "https://www.lvz.de/"
+RADIO_DRESDEN_AUTH_DIR = INSTANCE_DIR / "auth" / "radiodresden"
+RADIO_DRESDEN_PROFILE_DIR = RADIO_DRESDEN_AUTH_DIR / "human-profile"
+RADIO_DRESDEN_STORAGE_STATE_PATH = RADIO_DRESDEN_AUTH_DIR / "storage_state.json"
+RADIO_DRESDEN_LOGIN_URL = "https://www.radiodresden.de/"
 BROWSER_CONTEXT_OPTIONS = {
     "viewport": {"width": 1440, "height": 1000},
     "screen": {"width": 1440, "height": 1000},
@@ -139,6 +143,22 @@ def has_lvz_auth_state() -> bool:
         LVZ_STORAGE_STATE_PATH.exists()
         and LVZ_STORAGE_STATE_PATH.stat().st_size > 0
     ) or has_persistent_profile_state(LVZ_PROFILE_DIR)
+
+
+def is_radio_dresden_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname == "radiodresden.de" or hostname.endswith(".radiodresden.de")
+
+
+def radio_dresden_storage_state_path() -> Path:
+    return RADIO_DRESDEN_STORAGE_STATE_PATH
+
+
+def has_radio_dresden_auth_state() -> bool:
+    return (
+        RADIO_DRESDEN_STORAGE_STATE_PATH.exists()
+        and RADIO_DRESDEN_STORAGE_STATE_PATH.stat().st_size > 0
+    ) or has_persistent_profile_state(RADIO_DRESDEN_PROFILE_DIR)
 
 
 def source_login_context_options() -> dict:
@@ -3380,6 +3400,7 @@ async def core_build_pressespiegel(
                 freie_presse_context = None
                 saechsische_context = None
                 lvz_context = None
+                radio_dresden_context = None
 
                 try:
                     for index, (url, section_heading) in enumerate(article_jobs, start=1):
@@ -3443,6 +3464,22 @@ async def core_build_pressespiegel(
                                         "Leipziger Volkszeitung: kein gespeicherter Login vorhanden. "
                                         "Bitte den Zugang im Pressespiegel autorisieren."
                                     )
+                            elif is_radio_dresden_url(url):
+                                if has_radio_dresden_auth_state():
+                                    if radio_dresden_context is None:
+                                        radio_dresden_context = await create_source_pressespiegel_context(
+                                            playwright,
+                                            browser,
+                                            RADIO_DRESDEN_PROFILE_DIR,
+                                            radio_dresden_storage_state_path(),
+                                        )
+                                    article_context = radio_dresden_context
+                                    log_callback("Radio Dresden: gespeicherter Login wird verwendet.")
+                                else:
+                                    log_callback(
+                                        "Radio Dresden: kein gespeicherter Login vorhanden. "
+                                        "Bitte den Zugang im Pressespiegel autorisieren."
+                                    )
                             article = await capture_article(
                                 article_context,
                                 url,
@@ -3481,6 +3518,8 @@ async def core_build_pressespiegel(
                         await saechsische_context.close()
                     if lvz_context is not None:
                         await lvz_context.close()
+                    if radio_dresden_context is not None:
+                        await radio_dresden_context.close()
                     await context.close()
                     await browser.close()
 
