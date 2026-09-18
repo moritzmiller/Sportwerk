@@ -268,6 +268,7 @@ def source_login_context_options() -> dict[str, Any]:
     ]
     options.pop("viewport", None)
     options.pop("screen", None)
+    options.pop("device_scale_factor", None)
     return options
 
 
