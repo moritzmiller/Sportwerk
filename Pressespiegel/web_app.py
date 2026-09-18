@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -21,17 +22,18 @@ import requests
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from main import (
-    BROWSER_CONTEXT_OPTIONS,
     FREIE_PRESSE_LOGIN_URL,
     FREIE_PRESSE_PROFILE_DIR,
     SAECHSISCHE_LOGIN_URL,
     SAECHSISCHE_PROFILE_DIR,
     freie_presse_storage_state_path,
+    has_persistent_profile_state,
     has_freie_presse_auth_state,
     has_saechsische_auth_state,
     PDF_FONT_FAMILIES,
@@ -40,6 +42,7 @@ from main import (
     SectionPlanEntry,
     core_build_pressespiegel,
     layout_to_dict,
+    launch_persistent_source_context,
     load_custom_layout_config,
     normalize_hex_color,
     prepare_section_groups,
@@ -258,18 +261,18 @@ def set_saechsische_auth_job(state: str, message: str) -> None:
             SAECHSISCHE_AUTH_JOB["started_at"] = None
 
 
-def source_login_context_options() -> dict[str, Any]:
-    options = dict(BROWSER_CONTEXT_OPTIONS)
-    options["no_viewport"] = True
-    options["args"] = [
-        *options.get("args", []),
-        "--start-maximized",
-        "--window-position=0,0",
-    ]
-    options.pop("viewport", None)
-    options.pop("screen", None)
-    options.pop("device_scale_factor", None)
-    return options
+def login_context_is_open(context) -> bool:
+    return any(not open_page.is_closed() for open_page in context.pages)
+
+
+async def try_write_storage_state(context, storage_state_path: Path) -> bool:
+    try:
+        await context.storage_state(path=str(storage_state_path))
+        return True
+    except PlaywrightError as exc:
+        if "Target page, context or browser has been closed" in str(exc):
+            return False
+        raise
 
 
 async def run_source_login_capture(
@@ -286,10 +289,11 @@ async def run_source_login_capture(
     set_job("running", "Loginfenster wird geoeffnet.")
     try:
         async with async_playwright() as playwright:
-            context = await playwright.chromium.launch_persistent_context(
-                user_data_dir=str(profile_dir),
+            context = await launch_persistent_source_context(
+                playwright,
+                profile_dir,
                 headless=False,
-                **source_login_context_options(),
+                login_window=True,
             )
             try:
                 page = context.pages[0] if context.pages else await context.new_page()
@@ -299,23 +303,110 @@ async def run_source_login_capture(
                     "Loginfenster ist offen. Nach dem Einloggen kann das Fenster geschlossen werden.",
                 )
 
+                saved_state = await try_write_storage_state(context, storage_state_path)
                 deadline = time.monotonic() + 15 * 60
                 while time.monotonic() < deadline:
-                    await context.storage_state(path=str(storage_state_path))
-                    if not context.pages or all(open_page.is_closed() for open_page in context.pages):
+                    if not login_context_is_open(context):
                         break
+                    saved_state = await try_write_storage_state(context, storage_state_path) or saved_state
                     await asyncio.sleep(5)
 
-                await context.storage_state(path=str(storage_state_path))
+                if login_context_is_open(context):
+                    saved_state = await try_write_storage_state(context, storage_state_path) or saved_state
             finally:
-                await context.close()
+                try:
+                    await context.close()
+                except PlaywrightError:
+                    pass
 
-        set_job("finished", f"{label}-Login wurde gespeichert.")
+        if saved_state or profile_dir.exists():
+            set_job("finished", f"{label}-Login wurde gespeichert.")
+        else:
+            set_job("failed", f"{label}-Login konnte nicht gespeichert werden.")
     except Exception as exc:
         set_job(
             "failed",
             f"{label}-Login konnte nicht gespeichert werden: {exc}",
         )
+
+
+def browser_executable_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    for command_name in ("chrome", "chrome.exe", "msedge", "msedge.exe"):
+        command_path = shutil.which(command_name)
+        if command_path:
+            candidates.append(Path(command_path))
+
+    base_dirs = [
+        os.environ.get("PROGRAMFILES"),
+        os.environ.get("PROGRAMFILES(X86)"),
+        os.environ.get("LOCALAPPDATA"),
+    ]
+    relative_paths = [
+        Path("Google/Chrome/Application/chrome.exe"),
+        Path("Microsoft/Edge/Application/msedge.exe"),
+    ]
+    for base_dir in base_dirs:
+        if not base_dir:
+            continue
+        for relative_path in relative_paths:
+            candidates.append(Path(base_dir) / relative_path)
+
+    unique_candidates: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate).lower()
+        if normalized in seen or not candidate.exists():
+            continue
+        seen.add(normalized)
+        unique_candidates.append(candidate)
+    return unique_candidates
+
+
+async def run_external_browser_login_capture(
+    *,
+    label: str,
+    login_url: str,
+    profile_dir: Path,
+    set_job,
+) -> None:
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    browsers = browser_executable_candidates()
+    if not browsers:
+        set_job("failed", f"{label}-Login konnte nicht gestartet werden: Chrome oder Edge wurde nicht gefunden.")
+        return
+
+    browser_path = browsers[0]
+    set_job(
+        "running",
+        "Normales Chrome/Edge-Fenster ist offen. Nach dem Einloggen bitte dieses Fenster schließen.",
+    )
+    try:
+        process = subprocess.Popen(
+            [
+                str(browser_path),
+                f"--user-data-dir={profile_dir}",
+                "--new-window",
+                "--no-first-run",
+                "--no-default-browser-check",
+                login_url,
+            ]
+        )
+
+        deadline = time.monotonic() + 15 * 60
+        while process.poll() is None and time.monotonic() < deadline:
+            await asyncio.sleep(5)
+
+        if process.poll() is None:
+            set_job("failed", f"{label}-Login wurde nicht gespeichert: Das Browserfenster ist noch offen.")
+            return
+
+        if has_persistent_profile_state(profile_dir):
+            set_job("finished", f"{label}-Login wurde gespeichert.")
+        else:
+            set_job("failed", f"{label}-Login konnte nicht gespeichert werden: kein Browserprofil gefunden.")
+    except Exception as exc:
+        set_job("failed", f"{label}-Login konnte nicht gespeichert werden: {exc}")
 
 
 async def run_freie_presse_login_capture() -> None:
@@ -329,11 +420,10 @@ async def run_freie_presse_login_capture() -> None:
 
 
 async def run_saechsische_login_capture() -> None:
-    await run_source_login_capture(
+    await run_external_browser_login_capture(
         label="Sächsische-Zeitung",
         login_url=SAECHSISCHE_LOGIN_URL,
         profile_dir=SAECHSISCHE_PROFILE_DIR,
-        storage_state_path=saechsische_storage_state_path(),
         set_job=set_saechsische_auth_job,
     )
 
@@ -943,7 +1033,7 @@ def build_layout_from_form(layouts: list[PdfLayout]) -> tuple[PdfLayout, dict[st
     logo_upload = save_upload("main_logo", "logo")
     font_upload = save_upload("font_file", "font")
 
-    custom_fonts, custom_layouts = load_layout_state()
+    custom_fonts, custom_layouts = load_custom_layout_config()
     font_family = request.form.get("font_family") or base_layout.font_family
     uploaded_font_label: str | None = None
     if font_upload is not None:
@@ -1027,6 +1117,75 @@ def build_layout_from_form(layouts: list[PdfLayout]) -> tuple[PdfLayout, dict[st
         save_custom_layout_config(custom_fonts, custom_layouts)
 
     return layout, {"uploaded_font_label": uploaded_font_label}
+
+
+def build_layout_from_payload(layouts: list[PdfLayout], payload: dict[str, Any]) -> PdfLayout:
+    base_layout = find_layout(layouts, str(payload.get("layout_id") or ""))
+    custom_fonts, _custom_layouts = load_custom_layout_config()
+    font_family = str(payload.get("font_family") or base_layout.font_family).strip()
+    available_fonts = set(PDF_FONT_FAMILIES) | set(custom_fonts)
+    if font_family not in available_fonts:
+        raise ValueError("Die ausgewählte Schriftart ist nicht verfügbar.")
+
+    background_kind = str(payload.get("background_kind") or base_layout.background_kind).strip()
+    if background_kind not in {"color", "image"}:
+        raise ValueError("Der Hintergrundtyp ist ungültig.")
+    background_hex = normalize_hex_color(str(payload.get("background_hex") or base_layout.background_hex))
+    background_image_path = str(payload.get("background_image_path") or base_layout.background_image_path or "").strip()
+    if background_kind == "image":
+        if not background_image_path:
+            raise ValueError("Bitte lade ein Hintergrundbild hoch oder wähle Farbe als Hintergrund.")
+        validate_background_image(Path(background_image_path))
+
+    cover_style = str(payload.get("cover_style") or base_layout.cover_style).strip()
+    if cover_style not in {"classic", "brand_band", "editorial", "image"}:
+        raise ValueError("Der Titelseitenstil ist ungültig.")
+    cover_image_path = str(payload.get("cover_image_path") or base_layout.cover_image_path or "").strip()
+    if cover_style == "image":
+        if not cover_image_path:
+            raise ValueError("Bitte lade ein Titelseitenbild hoch oder wähle einen anderen Titelseitenstil.")
+        validate_cover_image(Path(cover_image_path))
+
+    main_logo_path = str(payload.get("main_logo_path") or base_layout.main_logo_path or "").strip()
+    if main_logo_path and Path(main_logo_path).is_absolute():
+        validate_main_logo(Path(main_logo_path))
+
+    return PdfLayout(
+        layout_id=base_layout.layout_id,
+        name=base_layout.name,
+        font_family=font_family,
+        background_hex=background_hex,
+        background_kind=background_kind,
+        background_image_path=background_image_path or None,
+        cover_style=cover_style,
+        cover_image_path=cover_image_path if cover_style == "image" else None,
+        main_logo_path=main_logo_path or None,
+        accent_hex=normalize_hex_color(str(payload.get("accent_hex") or base_layout.accent_hex), "#F28C28"),
+        title_text=str(payload.get("title_text") or base_layout.title_text).strip() or "PRESSESPIEGEL",
+        is_custom=base_layout.is_custom,
+    )
+
+
+def save_named_layout(name: str, layout: PdfLayout) -> tuple[PdfLayout, list[PdfLayout]]:
+    custom_fonts, custom_layouts = load_custom_layout_config()
+    custom_layout = PdfLayout(
+        layout_id=f"custom_{uuid.uuid4().hex[:10]}",
+        name=name,
+        font_family=layout.font_family,
+        background_hex=layout.background_hex,
+        background_kind=layout.background_kind,
+        background_image_path=layout.background_image_path,
+        cover_style=layout.cover_style,
+        cover_image_path=layout.cover_image_path,
+        main_logo_path=layout.main_logo_path,
+        accent_hex=layout.accent_hex,
+        title_text=layout.title_text,
+        is_custom=True,
+    )
+    custom_layouts = [existing for existing in custom_layouts if existing.name != name]
+    custom_layouts.append(custom_layout)
+    save_custom_layout_config(custom_fonts, custom_layouts)
+    return custom_layout, list(PDF_LAYOUTS) + custom_layouts
 
 
 def update_job(job_id: str, **changes: Any) -> None:
@@ -1229,6 +1388,36 @@ def delete_saved_pressespiegel(saved_id: str):
             return jsonify({"error": "Gespeicherter Pressespiegel nicht gefunden."}), 404
         save_saved_pressespiegel_items(next_items)
     return jsonify({"success": True})
+
+
+@app.post("/pressespiegel/layouts")
+def save_pressespiegel_layout():
+    ensure_instance_dirs()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Ungültige Layoutdaten."}), 400
+
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Bitte gib einen Layoutnamen ein."}), 400
+
+    raw_layout = payload.get("layout")
+    if not isinstance(raw_layout, dict):
+        return jsonify({"error": "Ungültige Layoutdaten."}), 400
+
+    _custom_fonts, layouts = load_layout_state()
+    try:
+        layout = build_layout_from_payload(layouts, raw_layout)
+        custom_layout, updated_layouts = save_named_layout(name, layout)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(
+        {
+            "layout": layout_to_dict(custom_layout) | {"is_custom": True},
+            "layouts": layout_payload(updated_layouts),
+        }
+    )
 
 
 @app.get("/pressespiegel/auth/freiepresse")

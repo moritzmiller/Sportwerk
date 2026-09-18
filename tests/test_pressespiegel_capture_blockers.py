@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +14,7 @@ for path in (ROOT, PRESSESPIEGEL):
         sys.path.insert(0, str(path))
 
 import main as pressespiegel  # noqa: E402
+from PIL import Image  # noqa: E402
 from playwright.async_api import Error as PlaywrightError  # noqa: E402
 from playwright.async_api import async_playwright  # noqa: E402
 
@@ -33,6 +35,44 @@ class FakeUrlopenResponse:
 
 
 class PressespiegelCaptureBlockerTests(unittest.TestCase):
+    def test_article_image_url_can_be_extracted_from_srcset(self) -> None:
+        html = """
+        <html>
+          <body>
+            <article>
+              <h1>Artikel mit Bild</h1>
+              <picture>
+                <source srcset="/cdn/hero-small.webp 640w, /cdn/hero-large.webp 1280w">
+                <img src="/cdn/fallback.jpg" alt="">
+              </picture>
+            </article>
+          </body>
+        </html>
+        """
+
+        self.assertEqual(
+            pressespiegel.extract_article_image_url(html, "https://www.freiepresse.de/sport/beispiel"),
+            "https://www.freiepresse.de/cdn/hero-large.webp",
+        )
+
+    def test_text_fallback_uses_layout_accent_color(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "fallback.png"
+
+            created = pressespiegel.render_article_text_fallback(
+                image_path,
+                "Titel",
+                "Freie Presse",
+                "18.09.2026",
+                "https://www.freiepresse.de/beispiel",
+                [pressespiegel.ArticleTextBlock(kind="headline", text="Titel")],
+                accent_hex="#004312",
+            )
+
+            self.assertTrue(created)
+            with Image.open(image_path) as image:
+                self.assertEqual(image.getpixel((8, 8)), (0, 67, 18))
+
     def test_saechsische_url_uses_matching_arc_rss_feed(self) -> None:
         url = (
             "https://www.saechsische.de/sport/regional/"

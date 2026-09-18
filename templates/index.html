@@ -182,6 +182,15 @@
               <input name="accent_hex" id="accent-hex" type="color" value="{{ default_layout.accent_hex }}">
             </label>
 
+            <div class="layout-save field--full" aria-label="Layout speichern">
+              <label class="field">
+                <span>Neues Layout speichern</span>
+                <input name="save_layout_name" id="save-layout-name" type="text" placeholder="z. B. Sportwerk dunkel">
+              </label>
+              <button class="button button--secondary" type="button" id="save-layout">Layout speichern</button>
+              <p id="save-layout-status" class="layout-save__status" aria-live="polite"></p>
+            </div>
+
             <div class="field">
               <span>Hauptlogo</span>
               <label class="file-picker">
@@ -201,11 +210,6 @@
               </label>
               <small>PNG-Dateien passend zur Quelle benennen, zum Beispiel saechsische.png, tag24.png oder lvz.png. Fehlende Logos werden gemeldet, der PDF-Export läuft weiter.</small>
             </div>
-
-            <label class="field field--full">
-              <span>Als neues Layout speichern</span>
-              <input name="save_layout_name" type="text" placeholder="Optionaler Layoutname">
-            </label>
           </div>
         </section>
 

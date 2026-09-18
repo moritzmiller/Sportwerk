@@ -3,7 +3,7 @@ const template = document.querySelector("#section-template");
 const addSectionButton = document.querySelector("#add-section");
 const form = document.querySelector("#pressespiegel-form");
 const layoutSelect = document.querySelector("#layout-select");
-const layoutData = JSON.parse(document.querySelector("#layout-data").textContent);
+let layoutData = JSON.parse(document.querySelector("#layout-data").textContent);
 const savedPressespiegelData = JSON.parse(document.querySelector("#saved-pressespiegel-data").textContent);
 const progressBar = document.querySelector("#progress-bar");
 const statusText = document.querySelector("#status-text");
@@ -20,6 +20,9 @@ const savedStatus = document.querySelector("#saved-pressespiegel-status");
 const loadPressespiegelButton = document.querySelector("#load-pressespiegel");
 const savePressespiegelButton = document.querySelector("#save-pressespiegel");
 const deletePressespiegelButton = document.querySelector("#delete-pressespiegel");
+const saveLayoutName = document.querySelector("#save-layout-name");
+const saveLayoutButton = document.querySelector("#save-layout");
+const saveLayoutStatus = document.querySelector("#save-layout-status");
 const authCards = [...document.querySelectorAll("[data-auth-source]")].map((card) => ({
   card,
   source: card.dataset.authSource,
@@ -93,6 +96,27 @@ function applyLayout(layoutId) {
   document.querySelector("#cover-image-path").value = layout.cover_image_path || "";
   document.querySelector("#accent-hex").value = layout.accent_hex || "#f28c28";
   document.querySelector("#main-logo-path").value = layout.main_logo_path || "";
+}
+
+function renderLayoutOptions(selectedId = layoutSelect.value) {
+  layoutSelect.innerHTML = "";
+  layoutData.forEach((layout) => {
+    const option = document.createElement("option");
+    option.value = layout.layout_id;
+    option.textContent = layout.is_custom ? `${layout.name} (eigen)` : layout.name;
+    layoutSelect.appendChild(option);
+  });
+  layoutSelect.value = layoutData.some((layout) => layout.layout_id === selectedId)
+    ? selectedId
+    : layoutData[0]?.layout_id || "";
+}
+
+function setLayoutStatus(message, tone = "neutral") {
+  if (!saveLayoutStatus) {
+    return;
+  }
+  saveLayoutStatus.textContent = message;
+  saveLayoutStatus.dataset.tone = tone;
 }
 
 function setSavedStatus(message, tone = "neutral") {
@@ -328,6 +352,48 @@ async function saveCurrentPressespiegel() {
   }
 }
 
+async function saveCurrentLayout() {
+  if (!saveLayoutName || !saveLayoutButton) {
+    return;
+  }
+  const name = saveLayoutName.value.trim();
+  if (!name) {
+    setLayoutStatus("Bitte einen Layoutnamen eingeben.", "danger");
+    saveLayoutName.focus();
+    return;
+  }
+
+  saveLayoutButton.disabled = true;
+  setLayoutStatus("Layout wird gespeichert ...");
+  try {
+    const response = await fetch("/pressespiegel/layouts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        layout: collectLayoutState(),
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "Layout konnte nicht gespeichert werden.");
+    }
+
+    layoutData = Array.isArray(result.layouts) ? result.layouts : layoutData;
+    renderLayoutOptions(result.layout?.layout_id);
+    if (result.layout?.layout_id) {
+      applyLayout(result.layout.layout_id);
+    }
+    setLayoutStatus("Layout gespeichert.", "success");
+  } catch (error) {
+    setLayoutStatus(error.message || "Layout konnte nicht gespeichert werden.", "danger");
+  } finally {
+    saveLayoutButton.disabled = false;
+  }
+}
+
 async function loadSelectedPressespiegel() {
   const selected = findSavedPressespiegel(savedSelect.value);
   if (!selected) {
@@ -417,6 +483,7 @@ savedSelect.addEventListener("change", loadSelectedPressespiegel);
 loadPressespiegelButton.addEventListener("click", loadSelectedPressespiegel);
 savePressespiegelButton.addEventListener("click", saveCurrentPressespiegel);
 deletePressespiegelButton.addEventListener("click", deleteSelectedPressespiegel);
+saveLayoutButton?.addEventListener("click", saveCurrentLayout);
 authCards.forEach((authCard) => {
   authCard.start?.addEventListener("click", () => startAuth(authCard));
 });
@@ -447,6 +514,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 addSection("Regionale Presse", "");
+renderLayoutOptions(layoutSelect.value);
 applyLayout(layoutSelect.value);
 renderSavedPressespiegelOptions();
 authCards.forEach(refreshAuthStatus);

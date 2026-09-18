@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -28,7 +29,7 @@ except ImportError:
 
 from bs4 import BeautifulSoup
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
-from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import BrowserContext, Error as PlaywrightError
 from playwright.async_api import Locator, Page, async_playwright
 from reportlab.lib.colors import Color, HexColor, white
 from reportlab.lib.pagesizes import A4
@@ -78,7 +79,7 @@ FREIE_PRESSE_STORAGE_STATE_PATH = FREIE_PRESSE_AUTH_DIR / "storage_state.json"
 FREIE_PRESSE_LOGIN_URL = "https://www.freiepresse.de/"
 FREIE_PRESSE_DOMAINS = {"freiepresse.de", "www.freiepresse.de"}
 SAECHSISCHE_AUTH_DIR = INSTANCE_DIR / "auth" / "saechsische"
-SAECHSISCHE_PROFILE_DIR = SAECHSISCHE_AUTH_DIR / "profile"
+SAECHSISCHE_PROFILE_DIR = SAECHSISCHE_AUTH_DIR / "human-profile"
 SAECHSISCHE_STORAGE_STATE_PATH = SAECHSISCHE_AUTH_DIR / "storage_state.json"
 SAECHSISCHE_LOGIN_URL = "https://www.saechsische.de/"
 BROWSER_CONTEXT_OPTIONS = {
@@ -88,6 +89,7 @@ BROWSER_CONTEXT_OPTIONS = {
     "color_scheme": "light",
     "device_scale_factor": 1,
 }
+PREFERRED_PERSISTENT_BROWSER_CHANNELS = ("chrome", "msedge")
 
 
 def is_freie_presse_url(url: str) -> bool:
@@ -99,8 +101,16 @@ def freie_presse_storage_state_path() -> Path:
     return FREIE_PRESSE_STORAGE_STATE_PATH
 
 
+def has_persistent_profile_state(profile_dir: Path) -> bool:
+    default_profile = profile_dir / "Default"
+    return default_profile.exists() and any(default_profile.iterdir())
+
+
 def has_freie_presse_auth_state() -> bool:
-    return FREIE_PRESSE_STORAGE_STATE_PATH.exists() and FREIE_PRESSE_STORAGE_STATE_PATH.stat().st_size > 0
+    return (
+        FREIE_PRESSE_STORAGE_STATE_PATH.exists()
+        and FREIE_PRESSE_STORAGE_STATE_PATH.stat().st_size > 0
+    ) or has_persistent_profile_state(FREIE_PRESSE_PROFILE_DIR)
 
 
 def saechsische_storage_state_path() -> Path:
@@ -108,7 +118,55 @@ def saechsische_storage_state_path() -> Path:
 
 
 def has_saechsische_auth_state() -> bool:
-    return SAECHSISCHE_STORAGE_STATE_PATH.exists() and SAECHSISCHE_STORAGE_STATE_PATH.stat().st_size > 0
+    return has_persistent_profile_state(SAECHSISCHE_PROFILE_DIR)
+
+
+def source_login_context_options() -> dict:
+    options = dict(BROWSER_CONTEXT_OPTIONS)
+    options["no_viewport"] = True
+    options["args"] = [
+        *options.get("args", []),
+        "--start-maximized",
+        "--window-position=0,0",
+    ]
+    options.pop("viewport", None)
+    options.pop("screen", None)
+    options.pop("device_scale_factor", None)
+    return options
+
+
+async def launch_persistent_source_context(
+    playwright,
+    profile_dir: Path,
+    *,
+    headless: bool,
+    login_window: bool = False,
+) -> BrowserContext:
+    options = source_login_context_options() if login_window else dict(BROWSER_CONTEXT_OPTIONS)
+    last_error: Exception | None = None
+    for channel in (*PREFERRED_PERSISTENT_BROWSER_CHANNELS, None):
+        try:
+            launch_options = {
+                "user_data_dir": str(profile_dir),
+                "headless": headless,
+                **options,
+            }
+            if channel is not None:
+                launch_options["channel"] = channel
+            return await playwright.chromium.launch_persistent_context(**launch_options)
+        except PlaywrightError as exc:
+            message = str(exc)
+            last_error = exc
+            if channel is not None and (
+                "Chromium distribution" in message
+                or "Executable doesn't exist" in message
+                or "not found" in message
+            ):
+                continue
+            raise
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Persistenter Browser-Kontext konnte nicht gestartet werden.")
 
 
 async def create_pressespiegel_context(browser, storage_state_path: Path | None = None):
@@ -116,6 +174,21 @@ async def create_pressespiegel_context(browser, storage_state_path: Path | None 
     if storage_state_path and storage_state_path.exists():
         options["storage_state"] = str(storage_state_path)
     return await browser.new_context(**options)
+
+
+async def create_source_pressespiegel_context(
+    playwright,
+    browser,
+    profile_dir: Path,
+    storage_state_path: Path,
+) -> BrowserContext:
+    if has_persistent_profile_state(profile_dir):
+        return await launch_persistent_source_context(
+            playwright,
+            profile_dir,
+            headless=True,
+        )
+    return await create_pressespiegel_context(browser, storage_state_path)
 
 
 if sys.platform.startswith("win"):
@@ -589,6 +662,18 @@ def extract_article_image_url(html_content: str, base_url: str) -> str | None:
     for node in _article_json_nodes(soup):
         candidates.extend(_json_image_candidates(node.get("image")))
 
+    article_roots = soup.select("article, main, [data-testid*='article' i], [class*='article' i]")
+    search_roots = article_roots if article_roots else [soup]
+    for root in search_roots:
+        for image_node in root.select("picture source, img"):
+            for attr_name in ("src", "data-src", "data-original", "data-lazy-src", "content"):
+                value = image_node.get(attr_name)
+                if value:
+                    candidates.append(str(value).strip())
+            srcset = image_node.get("srcset") or image_node.get("data-srcset")
+            if srcset:
+                candidates.extend(_srcset_image_candidates(str(srcset)))
+
     seen: set[str] = set()
     for candidate in candidates:
         normalized = urljoin(base_url, candidate.strip())
@@ -601,6 +686,59 @@ def extract_article_image_url(html_content: str, base_url: str) -> str | None:
     return None
 
 
+def _srcset_image_candidates(srcset: str) -> list[str]:
+    candidates: list[tuple[float, str]] = []
+    for raw_candidate in srcset.split(","):
+        value = raw_candidate.strip()
+        if not value:
+            continue
+        parts = value.split()
+        url = parts[0]
+        descriptor = parts[1] if len(parts) > 1 else ""
+        score = 0.0
+        if descriptor.endswith("w"):
+            try:
+                score = float(descriptor[:-1])
+            except ValueError:
+                score = 0.0
+        elif descriptor.endswith("x"):
+            try:
+                score = float(descriptor[:-1]) * 1000
+            except ValueError:
+                score = 0.0
+        candidates.append((score, url))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [url for _score, url in candidates]
+
+
+def _is_certificate_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        current = current.__cause__ or current.__context__
+    return "certificate verify failed" in str(exc).lower()
+
+
+def _open_image_request(request: Request, timeout: int = 20):
+    try:
+        return urlopen(request, timeout=timeout)
+    except OSError as exc:
+        if not _is_certificate_error(exc):
+            raise
+
+    try:
+        import certifi
+
+        context = ssl.create_default_context(cafile=certifi.where())
+        return urlopen(request, timeout=timeout, context=context)
+    except (ImportError, OSError) as exc:
+        if not _is_certificate_error(exc):
+            raise
+
+    return urlopen(request, timeout=timeout, context=ssl._create_unverified_context())
+
+
 def download_remote_image(image_url: str, page_url: str, destination: Path) -> Path | None:
     try:
         request = Request(
@@ -611,7 +749,7 @@ def download_remote_image(image_url: str, page_url: str, destination: Path) -> P
                 "Referer": page_url,
             },
         )
-        with urlopen(request, timeout=20) as response:
+        with _open_image_request(request, timeout=20) as response:
             content_type = response.headers.get("Content-Type", "").lower()
             payload = response.read(8_000_000)
         if "svg" in content_type or len(payload) < 5_000:
@@ -738,6 +876,7 @@ def render_saechsische_rss_fallback(
     image_path: Path,
     url: str,
     article: RssArticleFallback,
+    accent_hex: str = "#F28C28",
 ) -> bool:
     blocks = [ArticleTextBlock(kind="headline", text=article.title)]
     if article.description:
@@ -759,6 +898,7 @@ def render_saechsische_rss_fallback(
         url,
         blocks,
         hero_image_path,
+        accent_hex,
     )
 
 
@@ -767,11 +907,12 @@ def build_saechsische_rss_article_result(
     image_path: Path,
     source_logo: Path | None,
     logo_warning: str | None,
+    accent_hex: str = "#F28C28",
 ) -> ArticleResult | None:
     article = fetch_saechsische_rss_article(url)
     if not article:
         return None
-    if not render_saechsische_rss_fallback(image_path, url, article):
+    if not render_saechsische_rss_fallback(image_path, url, article, accent_hex):
         return None
 
     return ArticleResult(
@@ -1034,6 +1175,7 @@ def render_article_text_fallback(
     url: str,
     blocks: list[ArticleTextBlock],
     hero_image_path: Path | None = None,
+    accent_hex: str = "#F28C28",
 ) -> bool:
     if not blocks:
         return False
@@ -1101,9 +1243,10 @@ def render_article_text_fallback(
     height = max(900, top_padding + bottom_padding + sum(line_height for _, _, line_height in layout_lines))
     image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
+    accent_color = normalize_hex_color(accent_hex, "#F28C28")
 
     y = top_padding
-    draw.rectangle((0, 0, 18, height), fill="#F28C28")
+    draw.rectangle((0, 0, 18, height), fill=accent_color)
     for kind, line, line_height in layout_lines:
         if kind == "hero" and hero_image:
             x = margin_x + max(0, (max_text_width - hero_image.width) // 2)
@@ -1138,6 +1281,7 @@ def render_paywall_fallback(
     url: str,
     teaser: str,
     hero_image_path: Path | None = None,
+    accent_hex: str = "#F28C28",
 ) -> bool:
     """Rendert eine transparente Paywall-Hinweisseite für das PDF."""
     width = 1440
@@ -1154,6 +1298,7 @@ def render_paywall_fallback(
     }
     image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
+    accent_color = normalize_hex_color(accent_hex, "#F28C28")
     hero_image: Image.Image | None = None
     if hero_image_path and hero_image_path.exists():
         try:
@@ -1162,8 +1307,8 @@ def render_paywall_fallback(
         except OSError:
             hero_image = None
 
-    draw.rectangle((0, 0, 18, height), fill="#F28C28")
-    draw.rectangle((margin_x, 96, width - margin_x, 210), fill="#FFF4E6", outline="#F28C28", width=3)
+    draw.rectangle((0, 0, 18, height), fill=accent_color)
+    draw.rectangle((margin_x, 96, width - margin_x, 210), fill="#FFF4E6", outline=accent_color, width=3)
     draw.text((margin_x + 32, 130), "PAYWALL / GESCHÜTZTER ARTIKEL", font=fonts["badge"], fill="#9A4F00")
 
     y = 260
@@ -1219,6 +1364,7 @@ def render_link_error_fallback(
     site_name: str,
     url: str,
     error_message: str,
+    accent_hex: str = "#F28C28",
 ) -> bool:
     """Rendert eine Fehler-Hinweisseite, damit blockierte Links im PDF erhalten bleiben."""
     width = 1440
@@ -1234,6 +1380,7 @@ def render_link_error_fallback(
     }
     image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
+    accent_color = normalize_hex_color(accent_hex, "#F28C28")
     y = 96
 
     def draw_wrapped(kind: str, text: str, line_height: int, fill: str) -> None:
@@ -1242,8 +1389,8 @@ def render_link_error_fallback(
             draw.text((margin_x, y), line, font=fonts[kind], fill=fill)
             y += line_height
 
-    draw.rectangle((0, 0, 18, height), fill="#F28C28")
-    draw.rectangle((margin_x, y, width - margin_x, y + 114), fill="#FFF4E6", outline="#F28C28", width=3)
+    draw.rectangle((0, 0, 18, height), fill=accent_color)
+    draw.rectangle((margin_x, y, width - margin_x, y + 114), fill="#FFF4E6", outline=accent_color, width=3)
     draw.text((margin_x + 32, y + 34), "LINK KONNTE NICHT GELADEN WERDEN", font=fonts["badge"], fill="#9A4F00")
     y += 180
     draw_wrapped("source", site_name, 40, "#171717")
@@ -1988,6 +2135,7 @@ async def capture_article(
     image_path: Path,
     source_logo_index: dict[str, Path],
     cancel_event: threading.Event,
+    accent_hex: str = "#F28C28",
 ) -> ArticleResult:
     if cancel_event.is_set():
         raise UserCancelled
@@ -2005,10 +2153,10 @@ async def capture_article(
                     f"Logo fehlt fuer {site_name}. "
                     "Bitte fuege eine passende PNG-Datei in den Logo-Ordner ein."
                 )
-            rss_result = build_saechsische_rss_article_result(url, image_path, source_logo, logo_warning)
+            rss_result = build_saechsische_rss_article_result(url, image_path, source_logo, logo_warning, accent_hex)
             if rss_result:
                 return rss_result
-            if render_link_error_fallback(image_path, site_name, url, error_message):
+            if render_link_error_fallback(image_path, site_name, url, error_message, accent_hex):
                 return ArticleResult(
                     url=url,
                     title=site_name,
@@ -2061,6 +2209,7 @@ async def capture_article(
                 url,
                 article_text_blocks,
                 hero_image_path,
+                accent_hex,
             ):
                 return ArticleResult(
                     url=url,
@@ -2074,7 +2223,16 @@ async def capture_article(
 
         if is_paywalled:
             teaser = extract_article_teaser(html_content)
-            if render_paywall_fallback(image_path, title, site_name, article_date, url, teaser, hero_image_path):
+            if render_paywall_fallback(
+                image_path,
+                title,
+                site_name,
+                article_date,
+                url,
+                teaser,
+                hero_image_path,
+                accent_hex,
+            ):
                 return ArticleResult(
                     url=url,
                     title=title,
@@ -2150,6 +2308,7 @@ async def capture_article(
                 url,
                 article_text_blocks,
                 hero_image_path,
+                accent_hex,
             ):
                 return ArticleResult(
                     url=url,
@@ -2167,7 +2326,16 @@ async def capture_article(
 
             if is_paywalled:
                 teaser = extract_article_teaser(html_content)
-                if render_paywall_fallback(image_path, title, site_name, article_date, url, teaser, hero_image_path):
+                if render_paywall_fallback(
+                    image_path,
+                    title,
+                    site_name,
+                    article_date,
+                    url,
+                    teaser,
+                    hero_image_path,
+                    accent_hex,
+                ):
                     return ArticleResult(
                         url=url,
                         title=title,
@@ -2193,6 +2361,7 @@ async def capture_article(
                 url,
                 article_text_blocks,
                 hero_image_path,
+                accent_hex,
             ):
                 return ArticleResult(
                     url=url,
@@ -2409,11 +2578,12 @@ def load_custom_layout_config() -> tuple[dict[str, PdfFontFamily], list[PdfLayou
         custom_fonts[font.label] = font
 
     custom_layouts: list[PdfLayout] = []
+    built_in_layout_names = {layout.name for layout in PDF_LAYOUTS}
     for raw_layout in raw_config.get("layouts", []):
         if not isinstance(raw_layout, dict):
             continue
         layout = layout_from_dict(raw_layout)
-        if layout is not None:
+        if layout is not None and layout.layout_id not in PDF_LAYOUT_BY_ID and layout.name not in built_in_layout_names:
             custom_layouts.append(layout)
 
     return custom_fonts, custom_layouts
@@ -2762,6 +2932,9 @@ def draw_cover_page(
         return
 
     draw_main_logo(pdf, layout, page_w / 2, page_h * 0.57, 50, 50)
+
+    pdf.setFillColor(accent)
+    pdf.rect(72, page_h * 0.525, page_w - 144, 2.5, fill=True, stroke=False)
 
     pdf.setFillColor(HexColor("#303030"))
     _draw_centered_letter_spaced_text(
@@ -3204,8 +3377,10 @@ async def core_build_pressespiegel(
                             if is_freie_presse_url(url):
                                 if has_freie_presse_auth_state():
                                     if freie_presse_context is None:
-                                        freie_presse_context = await create_pressespiegel_context(
+                                        freie_presse_context = await create_source_pressespiegel_context(
+                                            playwright,
                                             browser,
+                                            FREIE_PRESSE_PROFILE_DIR,
                                             freie_presse_storage_state_path(),
                                         )
                                     article_context = freie_presse_context
@@ -3218,8 +3393,10 @@ async def core_build_pressespiegel(
                             elif is_saechsische_url(url):
                                 if has_saechsische_auth_state():
                                     if saechsische_context is None:
-                                        saechsische_context = await create_pressespiegel_context(
+                                        saechsische_context = await create_source_pressespiegel_context(
+                                            playwright,
                                             browser,
+                                            SAECHSISCHE_PROFILE_DIR,
                                             saechsische_storage_state_path(),
                                         )
                                     article_context = saechsische_context
@@ -3235,6 +3412,7 @@ async def core_build_pressespiegel(
                                 image_path,
                                 source_logo_index,
                                 cancel_event,
+                                layout.accent_hex,
                             )
                             if article.logo_path is None:
                                 article.logo_warning = (

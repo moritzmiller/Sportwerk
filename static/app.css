@@ -1607,6 +1607,34 @@ textarea:focus {
   color: var(--color-danger);
 }
 
+.layout-save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-4);
+  border: 1px solid rgba(31, 111, 235, 0.18);
+  border-radius: var(--radius-md);
+  background: #f7faff;
+  padding: var(--space-4);
+}
+
+.layout-save__status {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  margin: calc(var(--space-2) * -1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.layout-save__status[data-tone="success"] {
+  color: var(--color-green);
+}
+
+.layout-save__status[data-tone="danger"] {
+  color: var(--color-danger);
+}
+
 .source-auth {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1939,6 +1967,7 @@ textarea:focus {
   .form-grid,
   .section-item__head,
   .saved-pressespiegel,
+  .layout-save,
   .source-auth,
   .summary,
   .tool-grid,
