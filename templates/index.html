@@ -57,13 +57,22 @@
             <p id="saved-pressespiegel-status" class="saved-pressespiegel__status" aria-live="polite"></p>
           </div>
 
-          <div class="source-auth" aria-label="Freie-Presse-Zugang">
+          <div class="source-auth" aria-label="Freie-Presse-Zugang" data-auth-source="freiepresse">
             <div class="source-auth__meta">
               <span>Freie Presse</span>
-              <strong id="freiepresse-auth-state">Status wird geladen</strong>
+              <strong data-auth-state>Status wird geladen</strong>
             </div>
-            <button class="button button--secondary" type="button" id="freiepresse-auth-start">Login erneuern</button>
-            <p id="freiepresse-auth-message" class="source-auth__message" aria-live="polite"></p>
+            <button class="button button--secondary" type="button" data-auth-start>Login erneuern</button>
+            <p class="source-auth__message" aria-live="polite" data-auth-message></p>
+          </div>
+
+          <div class="source-auth" aria-label="Sächsische-Zeitung-Zugang" data-auth-source="saechsische">
+            <div class="source-auth__meta">
+              <span>Sächsische Zeitung</span>
+              <strong data-auth-state>Status wird geladen</strong>
+            </div>
+            <button class="button button--secondary" type="button" data-auth-start>Login erneuern</button>
+            <p class="source-auth__message" aria-live="polite" data-auth-message></p>
           </div>
 
           <div id="sections" class="section-list"></div>

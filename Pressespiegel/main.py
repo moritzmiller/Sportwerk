@@ -77,6 +77,10 @@ FREIE_PRESSE_PROFILE_DIR = FREIE_PRESSE_AUTH_DIR / "profile"
 FREIE_PRESSE_STORAGE_STATE_PATH = FREIE_PRESSE_AUTH_DIR / "storage_state.json"
 FREIE_PRESSE_LOGIN_URL = "https://www.freiepresse.de/"
 FREIE_PRESSE_DOMAINS = {"freiepresse.de", "www.freiepresse.de"}
+SAECHSISCHE_AUTH_DIR = INSTANCE_DIR / "auth" / "saechsische"
+SAECHSISCHE_PROFILE_DIR = SAECHSISCHE_AUTH_DIR / "profile"
+SAECHSISCHE_STORAGE_STATE_PATH = SAECHSISCHE_AUTH_DIR / "storage_state.json"
+SAECHSISCHE_LOGIN_URL = "https://www.saechsische.de/"
 BROWSER_CONTEXT_OPTIONS = {
     "viewport": {"width": 1440, "height": 1000},
     "screen": {"width": 1440, "height": 1000},
@@ -97,6 +101,14 @@ def freie_presse_storage_state_path() -> Path:
 
 def has_freie_presse_auth_state() -> bool:
     return FREIE_PRESSE_STORAGE_STATE_PATH.exists() and FREIE_PRESSE_STORAGE_STATE_PATH.stat().st_size > 0
+
+
+def saechsische_storage_state_path() -> Path:
+    return SAECHSISCHE_STORAGE_STATE_PATH
+
+
+def has_saechsische_auth_state() -> bool:
+    return SAECHSISCHE_STORAGE_STATE_PATH.exists() and SAECHSISCHE_STORAGE_STATE_PATH.stat().st_size > 0
 
 
 async def create_pressespiegel_context(browser, storage_state_path: Path | None = None):
@@ -3173,6 +3185,7 @@ async def core_build_pressespiegel(
                 browser = await playwright.chromium.launch(headless=True)
                 context = await create_pressespiegel_context(browser)
                 freie_presse_context = None
+                saechsische_context = None
 
                 try:
                     for index, (url, section_heading) in enumerate(article_jobs, start=1):
@@ -3200,6 +3213,20 @@ async def core_build_pressespiegel(
                                 else:
                                     log_callback(
                                         "Freie Presse: kein gespeicherter Login vorhanden. "
+                                        "Bitte den Zugang im Pressespiegel autorisieren."
+                                    )
+                            elif is_saechsische_url(url):
+                                if has_saechsische_auth_state():
+                                    if saechsische_context is None:
+                                        saechsische_context = await create_pressespiegel_context(
+                                            browser,
+                                            saechsische_storage_state_path(),
+                                        )
+                                    article_context = saechsische_context
+                                    log_callback("Sächsische Zeitung: gespeicherter Login wird verwendet.")
+                                else:
+                                    log_callback(
+                                        "Sächsische Zeitung: kein gespeicherter Login vorhanden. "
                                         "Bitte den Zugang im Pressespiegel autorisieren."
                                     )
                             article = await capture_article(
@@ -3235,6 +3262,8 @@ async def core_build_pressespiegel(
                 finally:
                     if freie_presse_context is not None:
                         await freie_presse_context.close()
+                    if saechsische_context is not None:
+                        await saechsische_context.close()
                     await context.close()
                     await browser.close()
 

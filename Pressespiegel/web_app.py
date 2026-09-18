@@ -29,8 +29,11 @@ from main import (
     BROWSER_CONTEXT_OPTIONS,
     FREIE_PRESSE_LOGIN_URL,
     FREIE_PRESSE_PROFILE_DIR,
+    SAECHSISCHE_LOGIN_URL,
+    SAECHSISCHE_PROFILE_DIR,
     freie_presse_storage_state_path,
     has_freie_presse_auth_state,
+    has_saechsische_auth_state,
     PDF_FONT_FAMILIES,
     PDF_LAYOUTS,
     PdfLayout,
@@ -42,6 +45,7 @@ from main import (
     prepare_section_groups,
     prepare_urls,
     register_custom_pdf_font,
+    saechsische_storage_state_path,
     save_custom_layout_config,
     validate_background_image,
     validate_cover_image,
@@ -101,6 +105,13 @@ JOBS_LOCK = threading.Lock()
 SAVED_PRESSESPIEGEL_LOCK = threading.Lock()
 FREIE_PRESSE_AUTH_LOCK = threading.Lock()
 FREIE_PRESSE_AUTH_JOB: dict[str, Any] = {
+    "state": "idle",
+    "message": "Kein Loginvorgang aktiv.",
+    "started_at": None,
+    "updated_at": None,
+}
+SAECHSISCHE_AUTH_LOCK = threading.Lock()
+SAECHSISCHE_AUTH_JOB: dict[str, Any] = {
     "state": "idle",
     "message": "Kein Loginvorgang aktiv.",
     "started_at": None,
@@ -232,23 +243,57 @@ def set_freie_presse_auth_job(state: str, message: str) -> None:
             FREIE_PRESSE_AUTH_JOB["started_at"] = None
 
 
-async def run_freie_presse_login_capture() -> None:
-    storage_state_path = freie_presse_storage_state_path()
-    storage_state_path.parent.mkdir(parents=True, exist_ok=True)
-    FREIE_PRESSE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+def set_saechsische_auth_job(state: str, message: str) -> None:
+    with SAECHSISCHE_AUTH_LOCK:
+        SAECHSISCHE_AUTH_JOB.update(
+            {
+                "state": state,
+                "message": message,
+                "updated_at": datetime.now().isoformat(),
+            }
+        )
+        if state == "running" and not SAECHSISCHE_AUTH_JOB.get("started_at"):
+            SAECHSISCHE_AUTH_JOB["started_at"] = datetime.now().isoformat()
+        if state in {"idle", "finished", "failed"}:
+            SAECHSISCHE_AUTH_JOB["started_at"] = None
 
-    set_freie_presse_auth_job("running", "Loginfenster wird geoeffnet.")
+
+def source_login_context_options() -> dict[str, Any]:
+    options = dict(BROWSER_CONTEXT_OPTIONS)
+    options["no_viewport"] = True
+    options["args"] = [
+        *options.get("args", []),
+        "--start-maximized",
+        "--window-position=0,0",
+    ]
+    options.pop("viewport", None)
+    options.pop("screen", None)
+    return options
+
+
+async def run_source_login_capture(
+    *,
+    label: str,
+    login_url: str,
+    profile_dir: Path,
+    storage_state_path: Path,
+    set_job,
+) -> None:
+    storage_state_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    set_job("running", "Loginfenster wird geoeffnet.")
     try:
         async with async_playwright() as playwright:
             context = await playwright.chromium.launch_persistent_context(
-                user_data_dir=str(FREIE_PRESSE_PROFILE_DIR),
+                user_data_dir=str(profile_dir),
                 headless=False,
-                **BROWSER_CONTEXT_OPTIONS,
+                **source_login_context_options(),
             )
             try:
                 page = context.pages[0] if context.pages else await context.new_page()
-                await page.goto(FREIE_PRESSE_LOGIN_URL, wait_until="domcontentloaded", timeout=45_000)
-                set_freie_presse_auth_job(
+                await page.goto(login_url, wait_until="domcontentloaded", timeout=45_000)
+                set_job(
                     "running",
                     "Loginfenster ist offen. Nach dem Einloggen kann das Fenster geschlossen werden.",
                 )
@@ -264,12 +309,32 @@ async def run_freie_presse_login_capture() -> None:
             finally:
                 await context.close()
 
-        set_freie_presse_auth_job("finished", "Freie-Presse-Login wurde gespeichert.")
+        set_job("finished", f"{label}-Login wurde gespeichert.")
     except Exception as exc:
-        set_freie_presse_auth_job(
+        set_job(
             "failed",
-            f"Freie-Presse-Login konnte nicht gespeichert werden: {exc}",
+            f"{label}-Login konnte nicht gespeichert werden: {exc}",
         )
+
+
+async def run_freie_presse_login_capture() -> None:
+    await run_source_login_capture(
+        label="Freie-Presse",
+        login_url=FREIE_PRESSE_LOGIN_URL,
+        profile_dir=FREIE_PRESSE_PROFILE_DIR,
+        storage_state_path=freie_presse_storage_state_path(),
+        set_job=set_freie_presse_auth_job,
+    )
+
+
+async def run_saechsische_login_capture() -> None:
+    await run_source_login_capture(
+        label="Sächsische-Zeitung",
+        login_url=SAECHSISCHE_LOGIN_URL,
+        profile_dir=SAECHSISCHE_PROFILE_DIR,
+        storage_state_path=saechsische_storage_state_path(),
+        set_job=set_saechsische_auth_job,
+    )
 
 
 def start_freie_presse_login_thread() -> bool:
@@ -294,12 +359,53 @@ def start_freie_presse_login_thread() -> bool:
     return True
 
 
+def start_saechsische_login_thread() -> bool:
+    with SAECHSISCHE_AUTH_LOCK:
+        if SAECHSISCHE_AUTH_JOB.get("state") == "running":
+            return False
+        SAECHSISCHE_AUTH_JOB.update(
+            {
+                "state": "running",
+                "message": "Loginfenster wird vorbereitet.",
+                "started_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+        )
+
+    thread = threading.Thread(
+        target=lambda: asyncio.run(run_saechsische_login_capture()),
+        name="SaechsischeAuth",
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
 def freie_presse_auth_status_payload() -> dict[str, Any]:
     storage_state_path = freie_presse_storage_state_path()
     with FREIE_PRESSE_AUTH_LOCK:
         job = dict(FREIE_PRESSE_AUTH_JOB)
     return {
         "configured": has_freie_presse_auth_state(),
+        "state": job.get("state", "idle"),
+        "message": job.get("message") or "",
+        "started_at": job.get("started_at"),
+        "updated_at": job.get("updated_at"),
+        "storage_state_path": str(storage_state_path),
+        "storage_state_updated_at": (
+            iso_from_timestamp(storage_state_path.stat().st_mtime)
+            if storage_state_path.exists()
+            else None
+        ),
+    }
+
+
+def saechsische_auth_status_payload() -> dict[str, Any]:
+    storage_state_path = saechsische_storage_state_path()
+    with SAECHSISCHE_AUTH_LOCK:
+        job = dict(SAECHSISCHE_AUTH_JOB)
+    return {
+        "configured": has_saechsische_auth_state(),
         "state": job.get("state", "idle"),
         "message": job.get("message") or "",
         "started_at": job.get("started_at"),
@@ -1136,6 +1242,21 @@ def start_freie_presse_auth():
     payload["started"] = started
     if not started:
         payload["message"] = "Freie-Presse-Login laeuft bereits."
+    return jsonify(payload)
+
+
+@app.get("/pressespiegel/auth/saechsische")
+def saechsische_auth_status():
+    return jsonify(saechsische_auth_status_payload())
+
+
+@app.post("/pressespiegel/auth/saechsische/start")
+def start_saechsische_auth():
+    started = start_saechsische_login_thread()
+    payload = saechsische_auth_status_payload()
+    payload["started"] = started
+    if not started:
+        payload["message"] = "Sächsische-Zeitung-Login laeuft bereits."
     return jsonify(payload)
 
 
