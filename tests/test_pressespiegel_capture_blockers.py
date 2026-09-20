@@ -85,7 +85,7 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
         ), patch.object(pressespiegel, "has_persistent_profile_state", return_value=True):
             self.assertTrue(pressespiegel.has_radio_dresden_auth_state())
 
-    def test_text_fallback_uses_layout_accent_color(self) -> None:
+    def test_text_fallback_has_no_layout_accent_bar(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "fallback.png"
 
@@ -101,7 +101,7 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
 
             self.assertTrue(created)
             with Image.open(image_path) as image:
-                self.assertEqual(image.getpixel((8, 8)), (0, 67, 18))
+                self.assertEqual(image.getpixel((8, 8)), (255, 255, 255))
 
     def test_saechsische_url_uses_matching_arc_rss_feed(self) -> None:
         url = (
@@ -154,6 +154,43 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             requested_urls[0],
             "https://www.saechsische.de/arc/outboundfeeds/rss/category/sport/regional/",
         )
+
+    def test_arc_fusion_article_body_is_extracted_for_saechsische_fallback(self) -> None:
+        paragraphs = [
+            "Der Sportverein aus Dresden berichtet ausführlich über die Vorbereitung, "
+            "die Entscheidungen der Verantwortlichen und die nächsten Termine im Kalender. "
+            "Dabei werden Hintergründe, Stimmen und konkrete Auswirkungen für die Region beschrieben.",
+            "Der zweite Abschnitt schildert Gespräche mit Trainern, Athleten und Verantwortlichen. "
+            "Er ordnet die Ergebnisse der vergangenen Wochen ein und erklärt, welche Aufgaben nun folgen.",
+            "Im dritten Absatz geht es um konkrete Termine, organisatorische Details und Reaktionen aus dem Umfeld. "
+            "Damit bleibt der Artikel für Leserinnen und Leser nachvollziehbar und vollständig.",
+        ]
+        html = f"""
+        <html>
+          <head>
+            <script>
+              Fusion.globalContent = {{
+                "headlines": {{"basic": "Dresdner Sportmeldung mit vielen Details"}},
+                "subheadlines": {{"basic": "Der Vorspann fasst die wichtigsten Punkte zusammen."}},
+                "content_elements": [
+                  {{"type": "text", "content": "<p>{paragraphs[0]}</p>"}},
+                  {{"type": "header", "content": "Die wichtigsten Hintergründe"}},
+                  {{"type": "text", "content": "<p>{paragraphs[1]}</p>"}},
+                  {{"type": "text", "content": "<p>{paragraphs[2]}</p>"}}
+                ]
+              }};
+            </script>
+          </head>
+          <body></body>
+        </html>
+        """
+
+        blocks = pressespiegel.extract_article_text_blocks(html, "Fallback-Titel")
+
+        self.assertGreaterEqual(sum(1 for block in blocks if block.kind == "paragraph"), 2)
+        self.assertIn("Dresdner Sportmeldung", blocks[0].text)
+        self.assertTrue(any(block.kind == "subheading" for block in blocks))
+        self.assertGreater(sum(len(block.text) for block in blocks), 450)
 
     def test_rhz_ad_or_premium_prompt_is_paywall_marker(self) -> None:
         html = """

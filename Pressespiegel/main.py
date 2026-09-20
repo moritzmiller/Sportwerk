@@ -42,7 +42,7 @@ from reportlab.pdfgen import canvas
 
 APP_NAME = "Pressespiegel Generator"
 APP_ID = "FamousDesigns.Pressespiegel.Automatisierung"
-ACCENT = HexColor("#F28C28")
+ACCENT = HexColor("#303030")
 DARK = HexColor("#171717")
 TEXT = HexColor("#2C2C2C")
 MUTED = HexColor("#6B7280")
@@ -50,10 +50,9 @@ LIGHT = HexColor("#F4F5F7")
 BORDER = HexColor("#D9DDE3")
 PDF_LOGO_BOX_WIDTH = 168
 PDF_LOGO_BOX_HEIGHT = 34
-PDF_SECTION_TITLE_BLOCK_HEIGHT = 54
-PDF_SECTION_TITLE_FONT_SIZE = 18
-PDF_SECTION_TITLE_LINE_HEIGHT = 22
-PDF_SECTION_TITLE_MAX_LINES = 2
+PDF_SECTION_TITLE_FONT_SIZE = 28
+PDF_SECTION_TITLE_LINE_HEIGHT = 34
+PDF_SECTION_TITLE_MAX_LINES = 4
 SOURCE_LOGO_SUFFIXES = {".png"}
 LOGO_STOP_WORDS = {
     "logo",
@@ -331,17 +330,17 @@ PDF_LAYOUTS: tuple[PdfLayout, ...] = (
         font_family="Helvetica",
         background_hex="#FFFFFF",
         cover_style="classic",
-        main_logo_path="FD_Icon_orange-white.png",
-        accent_hex="#F28C28",
+        main_logo_path="FD_Icon_white-black.ico",
+        accent_hex="#303030",
     ),
     PdfLayout(
         layout_id="sportwerk",
         name="Sportwerk hell",
         font_family="Helvetica",
-        background_hex="#F6F7F2",
+        background_hex="#FFFFFF",
         cover_style="brand_band",
-        main_logo_path="FD_Icon_orange-white.png",
-        accent_hex="#F28C28",
+        main_logo_path="FD_Icon_white-black.ico",
+        accent_hex="#303030",
     ),
     PdfLayout(
         layout_id="editorial",
@@ -916,7 +915,7 @@ def render_saechsische_rss_fallback(
     image_path: Path,
     url: str,
     article: RssArticleFallback,
-    accent_hex: str = "#F28C28",
+    accent_hex: str = "#303030",
 ) -> bool:
     blocks = [ArticleTextBlock(kind="headline", text=article.title)]
     if article.description:
@@ -947,7 +946,7 @@ def build_saechsische_rss_article_result(
     image_path: Path,
     source_logo: Path | None,
     logo_warning: str | None,
-    accent_hex: str = "#F28C28",
+    accent_hex: str = "#303030",
 ) -> ArticleResult | None:
     article = fetch_saechsische_rss_article(url)
     if not article:
@@ -1095,6 +1094,106 @@ def _extract_next_article_blocks(soup: BeautifulSoup) -> list[ArticleTextBlock]:
     return blocks if paragraph_count >= 2 and total_chars >= 450 else []
 
 
+def _extract_balanced_json_object(script_text: str, marker: str) -> object | None:
+    marker_index = script_text.find(marker)
+    if marker_index < 0:
+        return None
+    start_index = script_text.find("{", marker_index)
+    if start_index < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    quote = ""
+    escaped = False
+    for index in range(start_index, len(script_text)):
+        char = script_text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                in_string = False
+            continue
+        if char in {"'", '"'}:
+            in_string = True
+            quote = char
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                raw_json = script_text[start_index : index + 1]
+                try:
+                    return json.loads(raw_json)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+    return None
+
+
+def _embedded_arc_article_payloads(soup: BeautifulSoup) -> list[dict]:
+    payloads: list[dict] = []
+    markers = (
+        "Fusion.globalContent",
+        "window.Fusion.globalContent",
+        "globalContent",
+    )
+    for script in soup.find_all("script"):
+        script_text = script.string or script.get_text()
+        if not script_text or "content_elements" not in script_text:
+            continue
+        for marker in markers:
+            payload = _extract_balanced_json_object(script_text, marker)
+            if isinstance(payload, dict) and isinstance(payload.get("content_elements"), list):
+                payloads.append(payload)
+                break
+    return payloads
+
+
+def _arc_text_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("basic", "content", "text", "value"):
+            candidate = value.get(key)
+            if isinstance(candidate, str):
+                return candidate
+    return ""
+
+
+def _extract_arc_article_blocks(soup: BeautifulSoup, fallback_title: str) -> list[ArticleTextBlock]:
+    blocks: list[ArticleTextBlock] = []
+    for payload in _embedded_arc_article_payloads(soup):
+        headline = _arc_text_value(payload.get("headlines")) or fallback_title
+        if headline:
+            _append_article_block(blocks, "headline", headline)
+
+        lead = _arc_text_value(payload.get("subheadlines")) or _arc_text_value(payload.get("description"))
+        if lead:
+            _append_article_block(blocks, "lead", lead)
+
+        for element in payload.get("content_elements", []):
+            if not isinstance(element, dict):
+                continue
+            element_type = str(element.get("type") or "").lower()
+            raw_text = _arc_text_value(element.get("content")) or _arc_text_value(element.get("text"))
+            if not raw_text:
+                continue
+            if element_type in {"header", "subhead", "interstitial_link"}:
+                _append_article_block(blocks, "subheading", raw_text)
+            elif element_type in {"text", "raw_html", "quote", "list"}:
+                _append_article_block(blocks, "paragraph", raw_text)
+
+        paragraph_count = sum(1 for block in blocks if block.kind == "paragraph")
+        total_chars = sum(len(block.text) for block in blocks)
+        if paragraph_count >= 2 and total_chars >= 450:
+            return blocks
+
+    return []
+
+
 def _extract_json_ld_article_blocks(soup: BeautifulSoup, fallback_title: str) -> list[ArticleTextBlock]:
     blocks: list[ArticleTextBlock] = []
     for node in _article_json_nodes(soup):
@@ -1126,6 +1225,9 @@ def extract_article_text_blocks(html_content: str, fallback_title: str) -> list[
     """Extrahiert Artikeltext für Seiten, deren visueller Screenshot leer bleibt."""
     soup = BeautifulSoup(html_content, "html.parser")
     blocks = _extract_next_article_blocks(soup)
+    if blocks:
+        return blocks
+    blocks = _extract_arc_article_blocks(soup, fallback_title)
     if blocks:
         return blocks
     blocks = _extract_json_ld_article_blocks(soup, fallback_title)
@@ -1215,7 +1317,7 @@ def render_article_text_fallback(
     url: str,
     blocks: list[ArticleTextBlock],
     hero_image_path: Path | None = None,
-    accent_hex: str = "#F28C28",
+    accent_hex: str = "#303030",
 ) -> bool:
     if not blocks:
         return False
@@ -1283,10 +1385,8 @@ def render_article_text_fallback(
     height = max(900, top_padding + bottom_padding + sum(line_height for _, _, line_height in layout_lines))
     image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
-    accent_color = normalize_hex_color(accent_hex, "#F28C28")
 
     y = top_padding
-    draw.rectangle((0, 0, 18, height), fill=accent_color)
     for kind, line, line_height in layout_lines:
         if kind == "hero" and hero_image:
             x = margin_x + max(0, (max_text_width - hero_image.width) // 2)
@@ -1321,7 +1421,7 @@ def render_paywall_fallback(
     url: str,
     teaser: str,
     hero_image_path: Path | None = None,
-    accent_hex: str = "#F28C28",
+    accent_hex: str = "#303030",
 ) -> bool:
     """Rendert eine transparente Paywall-Hinweisseite für das PDF."""
     width = 1440
@@ -1338,7 +1438,6 @@ def render_paywall_fallback(
     }
     image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
-    accent_color = normalize_hex_color(accent_hex, "#F28C28")
     hero_image: Image.Image | None = None
     if hero_image_path and hero_image_path.exists():
         try:
@@ -1347,9 +1446,8 @@ def render_paywall_fallback(
         except OSError:
             hero_image = None
 
-    draw.rectangle((0, 0, 18, height), fill=accent_color)
-    draw.rectangle((margin_x, 96, width - margin_x, 210), fill="#FFF4E6", outline=accent_color, width=3)
-    draw.text((margin_x + 32, 130), "PAYWALL / GESCHÜTZTER ARTIKEL", font=fonts["badge"], fill="#9A4F00")
+    draw.rectangle((margin_x, 96, width - margin_x, 210), fill="#F4F5F7", outline="#D9DDE3", width=3)
+    draw.text((margin_x + 32, 130), "PAYWALL / GESCHÜTZTER ARTIKEL", font=fonts["badge"], fill="#343434")
 
     y = 260
 
@@ -1404,7 +1502,7 @@ def render_link_error_fallback(
     site_name: str,
     url: str,
     error_message: str,
-    accent_hex: str = "#F28C28",
+    accent_hex: str = "#303030",
 ) -> bool:
     """Rendert eine Fehler-Hinweisseite, damit blockierte Links im PDF erhalten bleiben."""
     width = 1440
@@ -1420,7 +1518,6 @@ def render_link_error_fallback(
     }
     image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
-    accent_color = normalize_hex_color(accent_hex, "#F28C28")
     y = 96
 
     def draw_wrapped(kind: str, text: str, line_height: int, fill: str) -> None:
@@ -1429,9 +1526,8 @@ def render_link_error_fallback(
             draw.text((margin_x, y), line, font=fonts[kind], fill=fill)
             y += line_height
 
-    draw.rectangle((0, 0, 18, height), fill=accent_color)
-    draw.rectangle((margin_x, y, width - margin_x, y + 114), fill="#FFF4E6", outline=accent_color, width=3)
-    draw.text((margin_x + 32, y + 34), "LINK KONNTE NICHT GELADEN WERDEN", font=fonts["badge"], fill="#9A4F00")
+    draw.rectangle((margin_x, y, width - margin_x, y + 114), fill="#F4F5F7", outline="#D9DDE3", width=3)
+    draw.text((margin_x + 32, y + 34), "LINK KONNTE NICHT GELADEN WERDEN", font=fonts["badge"], fill="#343434")
     y += 180
     draw_wrapped("source", site_name, 40, "#171717")
     y += 28
@@ -2175,7 +2271,7 @@ async def capture_article(
     image_path: Path,
     source_logo_index: dict[str, Path],
     cancel_event: threading.Event,
-    accent_hex: str = "#F28C28",
+    accent_hex: str = "#303030",
 ) -> ArticleResult:
     if cancel_event.is_set():
         raise UserCancelled
@@ -2239,6 +2335,28 @@ async def capture_article(
             page.url or url,
             image_path.with_name(f"{image_path.stem}_hero.png"),
         )
+
+        if is_saechsische_url(page.url or url) and article_text_blocks:
+            if render_article_text_fallback(
+                image_path,
+                title,
+                site_name,
+                article_date,
+                url,
+                article_text_blocks,
+                hero_image_path,
+                accent_hex,
+            ):
+                return ArticleResult(
+                    url=url,
+                    title=title,
+                    site_name=site_name,
+                    article_date=article_date,
+                    image_path=image_path,
+                    logo_path=source_logo,
+                    logo_warning=logo_warning,
+                    capture_note="Sächsische.de: strukturierter Artikeltext wurde für die PDF-Darstellung verwendet.",
+                )
 
         if is_paywalled and article_text_blocks:
             if render_article_text_fallback(
@@ -2340,6 +2458,10 @@ async def capture_article(
                 )
 
         if not is_usable_article_screenshot(image_path):
+            rss_result = build_saechsische_rss_article_result(url, image_path, source_logo, logo_warning, accent_hex)
+            if rss_result:
+                return rss_result
+
             if render_article_text_fallback(
                 image_path,
                 title,
@@ -2556,7 +2678,7 @@ def layout_from_dict(raw_layout: dict[str, object]) -> PdfLayout | None:
         cover_style = str(raw_layout.get("cover_style") or "classic").strip()
         cover_image_path = raw_layout.get("cover_image_path")
         main_logo_path = raw_layout.get("main_logo_path")
-        accent_hex = normalize_hex_color(str(raw_layout.get("accent_hex") or "#F28C28"), "#F28C28")
+        accent_hex = normalize_hex_color(str(raw_layout.get("accent_hex") or "#303030"), "#303030")
         title_text = str(raw_layout.get("title_text") or "PRESSESPIEGEL").strip()
     except (KeyError, TypeError, ValueError):
         return None
@@ -2945,13 +3067,11 @@ def draw_cover_page(
             return
 
     apply_pdf_background(pdf, layout)
-    accent = HexColor(normalize_hex_color(layout.accent_hex, "#F28C28"))
+    neutral_rule = HexColor("#303030")
 
     if layout.cover_style == "brand_band":
         pdf.setFillColor(DARK)
         pdf.rect(0, page_h * 0.62, page_w, page_h * 0.38, fill=True, stroke=False)
-        pdf.setFillColor(accent)
-        pdf.rect(0, page_h * 0.60, page_w, 9, fill=True, stroke=False)
         draw_main_logo(pdf, layout, page_w / 2, page_h * 0.78, 74, 74)
         pdf.setFillColor(white)
         _draw_centered_letter_spaced_text(pdf, layout.title_text, page_h * 0.69, fonts.bold, 24, 2.2)
@@ -2961,7 +3081,7 @@ def draw_cover_page(
         return
 
     if layout.cover_style == "editorial":
-        pdf.setFillColor(accent)
+        pdf.setFillColor(neutral_rule)
         pdf.rect(72, page_h * 0.57, page_w - 144, 2.5, fill=True, stroke=False)
         draw_main_logo(pdf, layout, page_w / 2, page_h * 0.65, 58, 58)
         pdf.setFillColor(HexColor("#252525"))
@@ -2973,7 +3093,7 @@ def draw_cover_page(
 
     draw_main_logo(pdf, layout, page_w / 2, page_h * 0.57, 50, 50)
 
-    pdf.setFillColor(accent)
+    pdf.setFillColor(neutral_rule)
     pdf.rect(72, page_h * 0.525, page_w - 144, 2.5, fill=True, stroke=False)
 
     pdf.setFillColor(HexColor("#303030"))
@@ -3070,10 +3190,9 @@ def _draw_column_site_mark(
 def _draw_section_heading(
     pdf: canvas.Canvas,
     heading: str,
-    top_y: float,
     layout: PdfLayout,
 ) -> None:
-    page_w, _ = A4
+    page_w, page_h = A4
     outer_margin = 42
     max_width = page_w - 2 * outer_margin
     fonts = get_pdf_font_family(layout.font_family)
@@ -3088,7 +3207,7 @@ def _draw_section_heading(
         return
 
     used_height = len(lines) * PDF_SECTION_TITLE_LINE_HEIGHT
-    first_baseline = top_y - (PDF_SECTION_TITLE_BLOCK_HEIGHT - used_height) / 2 - PDF_SECTION_TITLE_FONT_SIZE
+    first_baseline = page_h / 2 + used_height / 2 - PDF_SECTION_TITLE_FONT_SIZE
 
     pdf.setFillColor(HexColor("#242424"))
     pdf.setFont(fonts.bold, PDF_SECTION_TITLE_FONT_SIZE)
@@ -3098,8 +3217,32 @@ def _draw_section_heading(
             first_baseline - line_index * PDF_SECTION_TITLE_LINE_HEIGHT,
             line,
         )
-    pdf.setFillColor(HexColor(normalize_hex_color(layout.accent_hex, "#F28C28")))
-    pdf.rect(outer_margin, top_y - PDF_SECTION_TITLE_BLOCK_HEIGHT + 6, 54, 2.5, fill=True, stroke=False)
+
+
+def _draw_page_footer(
+    pdf: canvas.Canvas,
+    article: ArticleResult,
+    page_part_indexes: list[int],
+    part_total: int,
+    y: float,
+    layout: PdfLayout,
+) -> None:
+    """Zeichnet Quellen-/Datumszeile einmal pro PDF-Seite."""
+    footer_text = f"{article_domain(article)}, {format_date_long_de(article.article_date)}"
+    if part_total > 1 and page_part_indexes:
+        first_part = min(page_part_indexes)
+        last_part = max(page_part_indexes)
+        if first_part == last_part:
+            footer_text = f"{footer_text} - Teil {first_part} von {part_total}"
+        else:
+            footer_text = f"{footer_text} - Teile {first_part}-{last_part} von {part_total}"
+
+    page_w, _ = A4
+    outer_margin = 42
+    fonts = get_pdf_font_family(layout.font_family)
+    pdf.setFillColor(HexColor("#343434"))
+    pdf.setFont(fonts.regular, 8.5)
+    pdf.drawCentredString(page_w / 2, y, pdf_safe_text(footer_text))
 
 
 def _column_image_top(content_top: float) -> float:
@@ -3153,13 +3296,10 @@ def _draw_image_column(
     card_padding: float,
     layout: PdfLayout,
 ) -> None:
-    mark_top = content_top
     image_top = _column_image_top(content_top)
     footer_space = 32
     max_content_width = column_width - 2 * card_padding
     max_content_height = image_top - content_bottom - footer_space - 2 * card_padding
-
-    _draw_column_site_mark(pdf, article, column_x, column_width, mark_top, layout)
 
     scale = min(
         max_content_width / image_part.width,
@@ -3198,17 +3338,6 @@ def _draw_image_column(
         height=final_height,
         preserveAspectRatio=True,
         mask="auto",
-    )
-
-    _draw_column_footer(
-        pdf,
-        article,
-        column_x,
-        column_width,
-        content_bottom + 8,
-        part_index,
-        part_total,
-        layout,
     )
 
 
@@ -3336,12 +3465,14 @@ def build_pdf(
                 raise UserCancelled
 
             apply_pdf_background(pdf, layout)
-            page_content_top = content_top
             if part_index == 0 and article.section_heading:
-                _draw_section_heading(pdf, article.section_heading, content_top, layout)
-                page_content_top = content_top - PDF_SECTION_TITLE_BLOCK_HEIGHT
+                _draw_section_heading(pdf, article.section_heading, layout)
+                pdf.showPage()
+                apply_pdf_background(pdf, layout)
 
             page_parts = image_parts[part_index:part_index + 2]
+            page_part_indexes = [part_index + column_index + 1 for column_index, _part in enumerate(page_parts)]
+            _draw_column_site_mark(pdf, article, outer_margin, page_w - 2 * outer_margin, content_top, layout)
             for column_index, part in enumerate(page_parts):
                 if cancel_event.is_set():
                     raise UserCancelled
@@ -3352,7 +3483,7 @@ def build_pdf(
                     part,
                     column_x,
                     column_width,
-                    page_content_top,
+                    content_top,
                     content_bottom,
                     part_index + column_index + 1,
                     len(image_parts),
@@ -3360,6 +3491,14 @@ def build_pdf(
                     layout,
                 )
 
+            _draw_page_footer(
+                pdf,
+                article,
+                page_part_indexes,
+                len(image_parts),
+                content_bottom + 8,
+                layout,
+            )
             pdf.showPage()
             part_index += 2
 
@@ -3600,15 +3739,15 @@ class PressespiegelGUI:
 
         style.configure(
             "Primary.TButton",
-            background="#F28C28",
-            foreground="#171717",
+            background="#303030",
+            foreground="#FFFFFF",
             font=("Segoe UI", 10, "bold"),
             padding=(16, 10),
             borderwidth=0,
         )
         style.map(
             "Primary.TButton",
-            background=[("active", "#FFA64D"), ("disabled", "#D7D9DD")],
+            background=[("active", "#4B5563"), ("disabled", "#D7D9DD")],
             foreground=[("disabled", "#8A8F98")],
         )
 
@@ -3634,12 +3773,12 @@ class PressespiegelGUI:
         style.map("Danger.TButton", background=[("active", "#FEF3F2")])
 
         style.configure(
-            "Orange.Horizontal.TProgressbar",
+            "Neutral.Horizontal.TProgressbar",
             troughcolor="#E4E7EC",
-            background="#F28C28",
+            background="#303030",
             bordercolor="#E4E7EC",
-            lightcolor="#F28C28",
-            darkcolor="#F28C28",
+            lightcolor="#303030",
+            darkcolor="#303030",
             thickness=12,
         )
 
@@ -3648,7 +3787,7 @@ class PressespiegelGUI:
         header.pack(fill=tk.X)
         header.pack_propagate(False)
 
-        accent_bar = tk.Frame(header, bg="#F28C28", width=9)
+        accent_bar = tk.Frame(header, bg="#303030", width=9)
         accent_bar.pack(side=tk.LEFT, fill=tk.Y)
 
         header_text = tk.Frame(header, bg="#171717")
@@ -4001,7 +4140,7 @@ class PressespiegelGUI:
             footer,
             orient=tk.HORIZONTAL,
             mode="determinate",
-            style="Orange.Horizontal.TProgressbar",
+            style="Neutral.Horizontal.TProgressbar",
             maximum=100,
         )
         self.progress_bar.pack(fill=tk.X)
@@ -4738,9 +4877,9 @@ def get_resource_path(relative_path: str) -> Path:
 
 def set_application_icon(root: tk.Tk) -> None:
     candidates = (
-        ["FD_Icon_orange-white.png"]
+        ["FD_Icon_white-black.ico"]
         if sys.platform == "darwin"
-        else ["FD_Icon_orange-white.ico", "FD_Icon_orange-white.png"]
+        else ["FD_Icon_white-black.ico"]
     )
 
     for icon_name in candidates:
