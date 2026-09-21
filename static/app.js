@@ -94,7 +94,6 @@ function applyLayout(layoutId) {
   document.querySelector("#background-hex").value = layout.background_hex || "#ffffff";
   document.querySelector("#background-image-path").value = layout.background_image_path || "";
   document.querySelector("#cover-image-path").value = layout.cover_image_path || "";
-  document.querySelector("#accent-hex").value = layout.accent_hex || "#f28c28";
   document.querySelector("#main-logo-path").value = layout.main_logo_path || "";
 }
 
@@ -231,6 +230,7 @@ function collectSections() {
 }
 
 function collectLayoutState() {
+  const selectedLayout = layoutData.find((candidate) => candidate.layout_id === document.querySelector("#layout-select").value);
   return {
     layout_id: document.querySelector("#layout-select").value,
     cover_style: document.querySelector("#cover-style").value,
@@ -240,7 +240,7 @@ function collectLayoutState() {
     background_hex: document.querySelector("#background-hex").value,
     background_image_path: document.querySelector("#background-image-path").value,
     cover_image_path: document.querySelector("#cover-image-path").value,
-    accent_hex: document.querySelector("#accent-hex").value,
+    accent_hex: selectedLayout?.accent_hex || "#303030",
     main_logo_path: document.querySelector("#main-logo-path").value,
   };
 }
@@ -276,7 +276,6 @@ function applySavedLayout(layout) {
   setControlValue("#background-hex", layout.background_hex);
   setControlValue("#background-image-path", layout.background_image_path);
   setControlValue("#cover-image-path", layout.cover_image_path);
-  setControlValue("#accent-hex", layout.accent_hex);
   setControlValue("#main-logo-path", layout.main_logo_path);
 }
 
