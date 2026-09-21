@@ -432,6 +432,28 @@ textarea {
   margin-top: var(--space-5);
 }
 
+.pdf-preview {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.pdf-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-ink);
+  font-size: var(--font-size-sm);
+}
+
+.pdf-preview iframe {
+  width: 100%;
+  min-height: 560px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+}
+
 .icon-button {
   width: 38px;
   height: 38px;

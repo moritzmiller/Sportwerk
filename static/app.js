@@ -9,6 +9,8 @@ const progressBar = document.querySelector("#progress-bar");
 const statusText = document.querySelector("#status-text");
 const logOutput = document.querySelector("#log-output");
 const downloadLink = document.querySelector("#download-link");
+const pdfPreview = document.querySelector("#pdf-preview");
+const pdfPreviewFrame = document.querySelector("#pdf-preview-frame");
 const summarySections = document.querySelector("#summary-sections");
 const summaryUrls = document.querySelector("#summary-urls");
 const heroSummarySections = document.querySelector("#hero-summary-sections");
@@ -33,6 +35,21 @@ const authCards = [...document.querySelectorAll("[data-auth-source]")].map((card
 let savedPressespiegel = Array.isArray(savedPressespiegelData) ? savedPressespiegelData : [];
 let currentSavedPressespiegelId = "";
 let displayedProgress = 0;
+
+function resetPdfPreview() {
+  pdfPreviewFrame.removeAttribute("src");
+  pdfPreview.classList.add("hidden");
+}
+
+function showPdfPreview(job) {
+  const previewUrl = job.preview_url || job.download_url?.replace(/\/download$/, "/preview");
+  if (!previewUrl) {
+    resetPdfPreview();
+    return;
+  }
+  pdfPreviewFrame.src = previewUrl;
+  pdfPreview.classList.remove("hidden");
+}
 
 function addSection(heading = "", urls = "") {
   const fragment = template.content.cloneNode(true);
@@ -440,6 +457,7 @@ async function pollJob(statusUrl) {
   renderLogs(job);
 
   if (job.state === "finished") {
+    showPdfPreview(job);
     downloadLink.href = job.download_url;
     downloadLink.classList.remove("hidden");
     setBusy(false);
@@ -491,6 +509,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   displayedProgress = 0;
   downloadLink.classList.add("hidden");
+  resetPdfPreview();
   logOutput.textContent = "";
   const formData = new FormData(form);
   setBusy(true);

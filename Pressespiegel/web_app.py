@@ -1449,6 +1449,7 @@ def run_job(
                 state="finished",
                 status_text=f"Fertig: {successful} Artikel, {failed} Fehler",
                 progress=100,
+                preview_url=f"/jobs/{job_id}/preview",
                 download_url=f"/jobs/{job_id}/download",
                 summary={
                     "successful": successful,
@@ -1665,6 +1666,7 @@ def create_job():
             "progress": 0,
             "status_text": "Wartet auf Verarbeitung",
             "logs": [],
+            "preview_url": None,
             "download_url": None,
             "summary": None,
             "input_errors": section_errors + fallback_errors + source_logo_errors,
@@ -1881,6 +1883,14 @@ def job_status(job_id: str):
                 return jsonify({"error": "Job nicht gefunden."}), 404
             JOBS[job_id] = job
         return jsonify(job)
+
+
+@app.get("/jobs/<job_id>/preview")
+def preview_pdf(job_id: str):
+    output_path = OUTPUT_DIR / f"pressespiegel_{job_id}.pdf"
+    if not output_path.exists():
+        return redirect(url_for("index"))
+    return send_file(output_path, as_attachment=False, download_name="pressespiegel.pdf", mimetype="application/pdf")
 
 
 @app.get("/jobs/<job_id>/download")
