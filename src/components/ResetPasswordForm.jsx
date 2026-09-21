@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 
 import { getPasswordResetLinkState } from "@/lib/auth-reset-flow";
-import { createClient } from "@/lib/supabase/client";
 
 function initialState() {
     return {
         ready: false,
         mode: "",
         token: "",
-        message: "Reset-Link wird geprüft...",
+        recovery: null,
+        message: "Reset-Link wird geprueft...",
     };
 }
 
@@ -19,24 +19,27 @@ function tokenState(token) {
         ready: true,
         mode: "gatekeeper-token",
         token,
+        recovery: null,
         message: "Lege jetzt dein neues Passwort fest.",
     };
 }
 
-function invalidState(message = "Der Reset-Link ist ungültig oder abgelaufen. Fordere bitte einen neuen Link an.") {
+function invalidState(message = "Der Reset-Link ist ungueltig oder abgelaufen. Fordere bitte einen neuen Link an.") {
     return {
         ready: false,
         mode: "",
         token: "",
+        recovery: null,
         message,
     };
 }
 
-function supabaseReadyState() {
+function supabaseReadyState(recovery) {
     return {
         ready: true,
         mode: "supabase-session",
         token: "",
+        recovery,
         message: "Lege jetzt dein neues Passwort fest.",
     };
 }
@@ -79,42 +82,20 @@ export default function ResetPasswordForm() {
                 return;
             }
 
-            try {
-                const supabase = createClient();
-
-                if (linkState.code) {
-                    const { error } = await supabase.auth.exchangeCodeForSession(linkState.code);
-                    if (error) throw error;
-                } else if (linkState.tokenHash) {
-                    const { error } = await supabase.auth.verifyOtp({
-                        type: "recovery",
-                        token_hash: linkState.tokenHash,
-                    });
-                    if (error) throw error;
-                } else if (linkState.accessToken && linkState.refreshToken) {
-                    const { error } = await supabase.auth.setSession({
-                        access_token: linkState.accessToken,
-                        refresh_token: linkState.refreshToken,
-                    });
-                    if (error) throw error;
-                } else {
-                    setResetState(invalidState());
-                    return;
-                }
-
-                if (!isCurrent) return;
-                cleanResetUrl();
-                setResetState(supabaseReadyState());
-            } catch (error) {
-                if (!isCurrent) return;
-                setResetState(
-                    invalidState(
-                        error?.message
-                            ? `Reset-Link konnte nicht geprüft werden: ${error.message}`
-                            : "Reset-Link konnte nicht geprüft werden."
-                    )
-                );
+            if (!linkState.code && !linkState.tokenHash && !(linkState.accessToken && linkState.refreshToken)) {
+                setResetState(invalidState());
+                return;
             }
+
+            if (!isCurrent) return;
+            setResetState(
+                supabaseReadyState({
+                    code: linkState.code,
+                    tokenHash: linkState.tokenHash,
+                    accessToken: linkState.accessToken,
+                    refreshToken: linkState.refreshToken,
+                })
+            );
         }
 
         prepareResetSession();
@@ -133,15 +114,21 @@ export default function ResetPasswordForm() {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            throw new Error(data.error || "Passwort konnte nicht geändert werden.");
+            throw new Error(data.error || "Passwort konnte nicht geaendert werden.");
         }
     }
 
     async function completeWithSupabaseSession() {
-        const supabase = createClient();
-        const { error } = await supabase.auth.updateUser({ password });
-        if (error) throw error;
-        await supabase.auth.signOut().catch(() => {});
+        const response = await fetch("/api/auth/password-reset/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recovery: resetState.recovery, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.error || "Passwort konnte nicht geaendert werden.");
+        }
     }
 
     async function handleSubmit(event) {
@@ -159,7 +146,7 @@ export default function ResetPasswordForm() {
         if (password !== confirmPassword) {
             setResetState((current) => ({
                 ...current,
-                message: "Die Passwörter stimmen nicht überein.",
+                message: "Die Passwoerter stimmen nicht ueberein.",
             }));
             return;
         }
@@ -172,7 +159,7 @@ export default function ResetPasswordForm() {
             } else if (resetState.mode === "supabase-session") {
                 await completeWithSupabaseSession();
             } else {
-                throw new Error("Der Reset-Link ist ungültig oder abgelaufen.");
+                throw new Error("Der Reset-Link ist ungueltig oder abgelaufen.");
             }
 
             cleanResetUrl();
@@ -180,14 +167,15 @@ export default function ResetPasswordForm() {
                 ready: false,
                 mode: "",
                 token: "",
-                message: "Passwort geändert. Du kannst dich jetzt mit dem neuen Passwort anmelden.",
+                recovery: null,
+                message: "Passwort geaendert. Du kannst dich jetzt mit dem neuen Passwort anmelden.",
             });
             setPassword("");
             setConfirmPassword("");
         } catch (error) {
             setResetState((current) => ({
                 ...current,
-                message: error?.message || "Passwort konnte nicht geändert werden.",
+                message: error?.message || "Passwort konnte nicht geaendert werden.",
             }));
         } finally {
             setLoading(false);
