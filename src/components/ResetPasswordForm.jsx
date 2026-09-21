@@ -1,39 +1,135 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-function getInitialResetState() {
-    if (typeof window === "undefined") {
-        return {
-            ready: false,
-            token: "",
-            message: "Reset-Link wird geprueft...",
-        };
-    }
+import { getPasswordResetLinkState } from "@/lib/auth-reset-flow";
 
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get("token") || "";
+function initialState() {
+    return {
+        ready: false,
+        mode: "",
+        token: "",
+        recovery: null,
+        message: "Reset-Link wird geprueft...",
+    };
+}
 
-    if (!token) {
-        return {
-            ready: false,
-            token: "",
-            message: "Der Reset-Link ist ungueltig oder abgelaufen. Fordere bitte einen neuen Link an.",
-        };
-    }
-
+function tokenState(token) {
     return {
         ready: true,
+        mode: "gatekeeper-token",
         token,
+        recovery: null,
         message: "Lege jetzt dein neues Passwort fest.",
     };
 }
 
+function invalidState(message = "Der Reset-Link ist ungueltig oder abgelaufen. Fordere bitte einen neuen Link an.") {
+    return {
+        ready: false,
+        mode: "",
+        token: "",
+        recovery: null,
+        message,
+    };
+}
+
+function supabaseReadyState(recovery) {
+    return {
+        ready: true,
+        mode: "supabase-session",
+        token: "",
+        recovery,
+        message: "Lege jetzt dein neues Passwort fest.",
+    };
+}
+
+function cleanResetUrl() {
+    window.history.replaceState({}, "", "/auth/reset-password");
+}
+
 export default function ResetPasswordForm() {
-    const [resetState, setResetState] = useState(getInitialResetState);
+    const [resetState, setResetState] = useState(initialState);
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        let isCurrent = true;
+
+        async function prepareResetSession() {
+            const url = new URL(window.location.href);
+            const legacyToken = url.searchParams.get("token") || "";
+
+            if (legacyToken) {
+                setResetState(tokenState(legacyToken));
+                return;
+            }
+
+            const linkState = getPasswordResetLinkState(window.location.href);
+            if (linkState.error) {
+                setResetState(
+                    invalidState(
+                        linkState.errorDescription ||
+                            "Der Reset-Link wurde von Supabase abgelehnt. Fordere bitte einen neuen Link an."
+                    )
+                );
+                return;
+            }
+
+            if (!linkState.hasRecoverySignal) {
+                setResetState(invalidState());
+                return;
+            }
+
+            if (!linkState.code && !linkState.tokenHash && !(linkState.accessToken && linkState.refreshToken)) {
+                setResetState(invalidState());
+                return;
+            }
+
+            if (!isCurrent) return;
+            setResetState(
+                supabaseReadyState({
+                    code: linkState.code,
+                    tokenHash: linkState.tokenHash,
+                    accessToken: linkState.accessToken,
+                    refreshToken: linkState.refreshToken,
+                })
+            );
+        }
+
+        prepareResetSession();
+
+        return () => {
+            isCurrent = false;
+        };
+    }, []);
+
+    async function completeWithGateKeeperToken() {
+        const response = await fetch("/api/auth/password-reset/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: resetState.token, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.error || "Passwort konnte nicht geaendert werden.");
+        }
+    }
+
+    async function completeWithSupabaseSession() {
+        const response = await fetch("/api/auth/password-reset/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recovery: resetState.recovery, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.error || "Passwort konnte nicht geaendert werden.");
+        }
+    }
 
     async function handleSubmit(event) {
         event.preventDefault();
@@ -57,38 +153,33 @@ export default function ResetPasswordForm() {
 
         setLoading(true);
 
-        let data = {};
-        let ok = false;
         try {
-            const response = await fetch("/api/auth/password-reset/complete", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token: resetState.token, password }),
+            if (resetState.mode === "gatekeeper-token") {
+                await completeWithGateKeeperToken();
+            } else if (resetState.mode === "supabase-session") {
+                await completeWithSupabaseSession();
+            } else {
+                throw new Error("Der Reset-Link ist ungueltig oder abgelaufen.");
+            }
+
+            cleanResetUrl();
+            setResetState({
+                ready: false,
+                mode: "",
+                token: "",
+                recovery: null,
+                message: "Passwort geaendert. Du kannst dich jetzt mit dem neuen Passwort anmelden.",
             });
-            ok = response.ok;
-            data = await response.json();
-        } catch {
-            data = { error: "Passwort konnte nicht geaendert werden." };
-        }
-
-        setLoading(false);
-
-        if (!ok) {
+            setPassword("");
+            setConfirmPassword("");
+        } catch (error) {
             setResetState((current) => ({
                 ...current,
-                message: data.error || "Passwort konnte nicht geaendert werden.",
+                message: error?.message || "Passwort konnte nicht geaendert werden.",
             }));
-            return;
+        } finally {
+            setLoading(false);
         }
-
-        window.history.replaceState({}, "", "/auth/reset-password");
-        setResetState({
-            ready: false,
-            token: "",
-            message: "Passwort geaendert. Du kannst dich jetzt mit dem neuen Passwort anmelden.",
-        });
-        setPassword("");
-        setConfirmPassword("");
     }
 
     return (
