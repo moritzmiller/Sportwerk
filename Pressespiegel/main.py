@@ -1390,11 +1390,6 @@ def render_article_text_fallback(
     for kind, line, line_height in layout_lines:
         if kind == "hero" and hero_image:
             x = margin_x + max(0, (max_text_width - hero_image.width) // 2)
-            draw.rounded_rectangle(
-                (x - 8, y - 8, x + hero_image.width + 8, y + hero_image.height + 8),
-                radius=8,
-                fill="#F4F5F7",
-            )
             image.paste(hero_image, (x, y))
             y += line_height
             continue
@@ -1446,10 +1441,9 @@ def render_paywall_fallback(
         except OSError:
             hero_image = None
 
-    draw.rectangle((margin_x, 96, width - margin_x, 210), fill="#F4F5F7", outline="#D9DDE3", width=3)
-    draw.text((margin_x + 32, 130), "PAYWALL / GESCHÜTZTER ARTIKEL", font=fonts["badge"], fill="#343434")
+    draw.text((margin_x, 112), "PAYWALL / GESCHÜTZTER ARTIKEL", font=fonts["badge"], fill="#343434")
 
-    y = 260
+    y = 210
 
     def draw_wrapped(kind: str, text: str, line_height: int, fill: str) -> None:
         nonlocal y
@@ -1466,11 +1460,6 @@ def render_paywall_fallback(
 
     if hero_image:
         x = margin_x + max(0, (max_text_width - hero_image.width) // 2)
-        draw.rounded_rectangle(
-            (x - 8, y - 8, x + hero_image.width + 8, y + hero_image.height + 8),
-            radius=8,
-            fill="#F4F5F7",
-        )
         image.paste(hero_image, (x, y))
         y += hero_image.height + 46
 
@@ -1484,9 +1473,7 @@ def render_paywall_fallback(
         "Mit einem berechtigten Zugang kann der Artikel außerhalb des Pressespiegels geöffnet werden."
     )
     draw_wrapped("paragraph", note, 43, "#30343B")
-    y += 48
-    draw.line((margin_x, y, width - margin_x, y), fill="#D9DDE3", width=2)
-    y += 44
+    y += 40
     draw_wrapped("meta", "Hinweis: Geschützte Inhalte werden nicht umgangen oder automatisiert entsperrt.", 34, "#6B7280")
 
     try:
@@ -1526,9 +1513,8 @@ def render_link_error_fallback(
             draw.text((margin_x, y), line, font=fonts[kind], fill=fill)
             y += line_height
 
-    draw.rectangle((margin_x, y, width - margin_x, y + 114), fill="#F4F5F7", outline="#D9DDE3", width=3)
-    draw.text((margin_x + 32, y + 34), "LINK KONNTE NICHT GELADEN WERDEN", font=fonts["badge"], fill="#343434")
-    y += 180
+    draw.text((margin_x, y), "LINK KONNTE NICHT GELADEN WERDEN", font=fonts["badge"], fill="#343434")
+    y += 104
     draw_wrapped("source", site_name, 40, "#171717")
     y += 28
     draw_wrapped("headline", "Quelle bleibt im Pressespiegel erhalten", 68, "#171717")
@@ -1540,9 +1526,7 @@ def render_link_error_fallback(
         43,
         "#30343B",
     )
-    y += 48
-    draw.line((margin_x, y, width - margin_x, y), fill="#D9DDE3", width=2)
-    y += 44
+    y += 40
     draw_wrapped("meta", url, 34, "#6B7280")
 
     try:
@@ -2805,12 +2789,8 @@ def draw_cover_image(pdf: canvas.Canvas, image_path: Path) -> bool:
 
 def apply_pdf_background(pdf: canvas.Canvas, layout: PdfLayout) -> None:
     page_w, page_h = A4
-    pdf.setFillColor(HexColor(normalize_hex_color(layout.background_hex)))
+    pdf.setFillColor(white)
     pdf.rect(0, 0, page_w, page_h, fill=True, stroke=False)
-    if layout.background_kind == "image" and layout.background_image_path:
-        image_path = Path(layout.background_image_path)
-        if image_path.exists():
-            draw_background_image(pdf, image_path)
 
 
 def draw_main_logo(
@@ -3057,50 +3037,17 @@ def draw_cover_page(
     created_at: datetime,
     layout: PdfLayout,
 ) -> None:
-    """Minimalistisches weißes Deckblatt nach dem gelieferten Pressespiegel-Beispiel."""
+    """Rendert ein rein typografisches Deckblatt ohne dekorative Elemente."""
     page_w, page_h = A4
     fonts = get_pdf_font_family(layout.font_family)
 
-    if layout.cover_style == "image" and layout.cover_image_path:
-        if draw_cover_image(pdf, Path(layout.cover_image_path)):
-            pdf.showPage()
-            return
-
     apply_pdf_background(pdf, layout)
-    neutral_rule = HexColor("#303030")
-
-    if layout.cover_style == "brand_band":
-        pdf.setFillColor(DARK)
-        pdf.rect(0, page_h * 0.62, page_w, page_h * 0.38, fill=True, stroke=False)
-        draw_main_logo(pdf, layout, page_w / 2, page_h * 0.78, 74, 74)
-        pdf.setFillColor(white)
-        _draw_centered_letter_spaced_text(pdf, layout.title_text, page_h * 0.69, fonts.bold, 24, 2.2)
-        pdf.setFillColor(HexColor("#343434"))
-        _draw_centered_letter_spaced_text(pdf, str(created_at.year), page_h * 0.47, fonts.regular, 14, 5.4)
-        pdf.showPage()
-        return
-
-    if layout.cover_style == "editorial":
-        pdf.setFillColor(neutral_rule)
-        pdf.rect(72, page_h * 0.57, page_w - 144, 2.5, fill=True, stroke=False)
-        draw_main_logo(pdf, layout, page_w / 2, page_h * 0.65, 58, 58)
-        pdf.setFillColor(HexColor("#252525"))
-        _draw_centered_letter_spaced_text(pdf, layout.title_text, page_h * 0.49, fonts.bold, 25, 1.4)
-        pdf.setFillColor(HexColor("#666666"))
-        _draw_centered_letter_spaced_text(pdf, str(created_at.year), page_h * 0.45, fonts.regular, 13, 4.8)
-        pdf.showPage()
-        return
-
-    draw_main_logo(pdf, layout, page_w / 2, page_h * 0.57, 50, 50)
-
-    pdf.setFillColor(neutral_rule)
-    pdf.rect(72, page_h * 0.525, page_w - 144, 2.5, fill=True, stroke=False)
 
     pdf.setFillColor(HexColor("#303030"))
     _draw_centered_letter_spaced_text(
         pdf,
         layout.title_text,
-        page_h * 0.49,
+        page_h * 0.52,
         fonts.bold,
         24,
         2.2,
@@ -3110,7 +3057,7 @@ def draw_cover_page(
     _draw_centered_letter_spaced_text(
         pdf,
         str(created_at.year),
-        page_h * 0.455,
+        page_h * 0.485,
         fonts.regular,
         14,
         6.0,
@@ -3298,8 +3245,8 @@ def _draw_image_column(
 ) -> None:
     image_top = _column_image_top(content_top)
     footer_space = 32
-    max_content_width = column_width - 2 * card_padding
-    max_content_height = image_top - content_bottom - footer_space - 2 * card_padding
+    max_content_width = column_width
+    max_content_height = image_top - content_bottom - footer_space
 
     scale = min(
         max_content_width / image_part.width,
@@ -3308,32 +3255,16 @@ def _draw_image_column(
     final_width = image_part.width * scale
     final_height = image_part.height * scale
 
-    card_width = final_width + 2 * card_padding
-    card_height = final_height + 2 * card_padding
-    card_x = column_x + (column_width - card_width) / 2
-    card_y = image_top - card_height
-
-    _draw_soft_card_shadow(pdf, card_x, card_y, card_width, card_height)
-    pdf.setFillColor(white)
-    pdf.setStrokeColor(HexColor("#EEEEEE"))
-    pdf.setLineWidth(0.4)
-    pdf.roundRect(
-        card_x,
-        card_y,
-        card_width,
-        card_height,
-        1.5,
-        fill=True,
-        stroke=True,
-    )
+    image_x = column_x + (column_width - final_width) / 2
+    image_y = image_top - final_height
 
     image_buffer = io.BytesIO()
     image_part.save(image_buffer, format="JPEG", quality=91, optimize=True)
     image_buffer.seek(0)
     pdf.drawImage(
         ImageReader(image_buffer),
-        card_x + card_padding,
-        card_y + card_padding,
+        image_x,
+        image_y,
         width=final_width,
         height=final_height,
         preserveAspectRatio=True,
@@ -3443,7 +3374,7 @@ def build_pdf(
     column_image_top = _column_image_top(content_top)
     column_footer_space = 32
     column_image_height = column_image_top - content_bottom - column_footer_space
-    card_padding = 8
+    card_padding = 0
 
     for article_index, article in enumerate(articles, start=1):
         if cancel_event.is_set():

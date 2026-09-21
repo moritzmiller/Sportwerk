@@ -103,6 +103,42 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             with Image.open(image_path) as image:
                 self.assertEqual(image.getpixel((8, 8)), (255, 255, 255))
 
+    def test_paywall_fallback_has_no_decorative_badge_or_separator(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "paywall.png"
+
+            created = pressespiegel.render_paywall_fallback(
+                image_path,
+                "Geschuetzter Artikel",
+                "Freie Presse",
+                "18.09.2026",
+                "https://www.freiepresse.de/beispiel",
+                "Frei sichtbarer Teaser.",
+                accent_hex="#004312",
+            )
+
+            self.assertTrue(created)
+            with Image.open(image_path) as image:
+                self.assertEqual(image.getpixel((132, 205)), (255, 255, 255))
+                self.assertEqual(image.getpixel((720, 985)), (255, 255, 255))
+
+    def test_link_error_fallback_has_no_decorative_badge_or_separator(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "link-error.png"
+
+            created = pressespiegel.render_link_error_fallback(
+                image_path,
+                "Beispielquelle",
+                "https://example.com/artikel",
+                "Testfehler",
+                accent_hex="#004312",
+            )
+
+            self.assertTrue(created)
+            with Image.open(image_path) as image:
+                self.assertEqual(image.getpixel((132, 205)), (255, 255, 255))
+                self.assertEqual(image.getpixel((720, 615)), (255, 255, 255))
+
     def test_saechsische_url_uses_matching_arc_rss_feed(self) -> None:
         url = (
             "https://www.saechsische.de/sport/regional/"
