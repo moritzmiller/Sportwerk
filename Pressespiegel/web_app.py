@@ -70,6 +70,7 @@ TRELLO_DIR = SPORTWERK_DIR / "Trello"
 PARTICIPATION_DIR = SPORTWERK_DIR / "Teilnahmebedingungen"
 TEMPLATE_DIR = SPORTWERK_DIR / "templates"
 STATIC_DIR = SPORTWERK_DIR / "static"
+FAVICON_PATH = SPORTWERK_DIR / "src" / "app" / "favicon.ico"
 INSTANCE_DIR = BASE_DIR / "instance"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
 OUTPUT_DIR = INSTANCE_DIR / "outputs"
@@ -110,6 +111,14 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PREFERRED_URL_SCHEME"] = (
     "https" if os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "").startswith("https://") else "http"
 )
+
+
+@app.get("/favicon.ico")
+def favicon():
+    if not FAVICON_PATH.exists():
+        return "", 404
+    return send_file(FAVICON_PATH, mimetype="image/x-icon", max_age=60 * 60 * 24)
+
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
