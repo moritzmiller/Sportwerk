@@ -114,6 +114,37 @@ app.config["PREFERRED_URL_SCHEME"] = (
 )
 
 
+def get_app_version() -> str:
+    configured_version = os.environ.get("SPORTWERK_APP_VERSION")
+    if configured_version:
+        return configured_version
+
+    try:
+        commit_result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=SPORTWERK_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        commit = commit_result.stdout.strip() or "local"
+        dirty_result = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=SPORTWERK_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return f"{commit}-dirty" if dirty_result.stdout.strip() else commit
+    except Exception:
+        return "local"
+
+
+@app.context_processor
+def inject_app_version() -> dict[str, str]:
+    return {"app_version": get_app_version()}
+
+
 @app.get("/favicon.ico")
 def favicon():
     if not FAVICON_PATH.exists():
