@@ -253,6 +253,36 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             )
         )
 
+    def test_metadata_uses_url_host_as_source_and_visible_german_date(self) -> None:
+        url = (
+            "https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/"
+            "cannstatt-singt-----das-grosse-weihnachtssingen--swr3-praesentiert-besonderes-weihnachtsevent-in-der-mhp-arena/"
+        )
+        html = """
+        <html>
+          <head>
+            <meta property="og:site_name" content="VfB Stuttgart">
+            <meta property="og:title" content="Cannstatt singt">
+          </head>
+          <body>
+            <div class="site-info">
+              <div class="date"><a href="/de/vfb/aktuell/neues/verein/">Verein</a> 15. September 2026</div>
+            </div>
+          </body>
+        </html>
+        """
+
+        title, site_name, article_date = pressespiegel.extract_article_metadata(html, url)
+
+        self.assertEqual(title, "Cannstatt singt")
+        self.assertEqual(site_name, "www.vfb.de")
+        self.assertEqual(article_date, "15.09.2026")
+
+    def test_article_domain_keeps_www_host(self) -> None:
+        article = pressespiegel.ArticleResult(url="https://www.vfb.de/de/beispiel/", site_name="VfB Stuttgart")
+
+        self.assertEqual(pressespiegel.article_domain(article), "www.vfb.de")
+
     def test_source_logo_index_accepts_svg_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_dir = Path(temp_dir)

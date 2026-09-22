@@ -496,6 +496,63 @@ def _first_meta_content(soup: BeautifulSoup, selectors: list[tuple[str, dict[str
     return None
 
 
+def _first_selector_text(soup: BeautifulSoup, selectors: tuple[str, ...]) -> str | None:
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if node:
+            value = node.get_text(" ", strip=True)
+            if value:
+                return value
+    return None
+
+
+def source_host_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if "@" in host:
+        host = host.rsplit("@", 1)[1]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    return host.rstrip(".")
+
+
+def _format_german_text_date(value: str) -> str | None:
+    month_numbers = {
+        "januar": 1,
+        "februar": 2,
+        "maerz": 3,
+        "marz": 3,
+        "april": 4,
+        "mai": 5,
+        "juni": 6,
+        "juli": 7,
+        "august": 8,
+        "september": 9,
+        "oktober": 10,
+        "november": 11,
+        "dezember": 12,
+    }
+    match = re.search(
+        r"\b(\d{1,2})\.\s*([A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df]+)\s+(\d{4})\b",
+        value,
+    )
+    if not match:
+        return None
+
+    month_name = (
+        match.group(2)
+        .casefold()
+        .replace("\u00e4", "ae")
+        .replace("\u00f6", "oe")
+        .replace("\u00fc", "ue")
+        .replace("\u00df", "ss")
+    )
+    month = month_numbers.get(month_name)
+    if month is None:
+        return None
+    return f"{int(match.group(1)):02d}.{month:02d}.{match.group(3)}"
+
+
 def _format_date(raw_date: str | None) -> str:
     if not raw_date:
         return "Unbekanntes Datum"
@@ -523,6 +580,10 @@ def _format_date(raw_date: str | None) -> str:
             return datetime.strptime(value[:10], fmt).strftime("%d.%m.%Y")
         except ValueError:
             continue
+
+    german_date = _format_german_text_date(value)
+    if german_date:
+        return german_date
 
     date_match = re.search(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", value)
     return date_match.group(1) if date_match else value[:30]
@@ -579,9 +640,9 @@ def extract_article_metadata(html_content: str, fallback_url: str) -> tuple[str,
     title = re.sub(r"\s+", " ", title or "Unbekannter Titel").strip()
 
     site_name = (
-        _first_meta_content(soup, [("meta", {"property": "og:site_name"})])
+        source_host_from_url(fallback_url)
+        or _first_meta_content(soup, [("meta", {"property": "og:site_name"})])
         or json_site
-        or urlparse(fallback_url).netloc.replace("www.", "")
         or "Unbekannte Quelle"
     )
     site_name = re.sub(r"\s+", " ", site_name).strip()
@@ -602,6 +663,18 @@ def extract_article_metadata(html_content: str, fallback_url: str) -> tuple[str,
         time_tag = soup.find("time")
         if time_tag:
             raw_date = time_tag.get("datetime") or time_tag.get_text(" ", strip=True)
+    if not raw_date:
+        raw_date = _first_selector_text(
+            soup,
+            (
+                ".site-info .date",
+                ".article-date",
+                ".date",
+                ".datum",
+                "[class*='date' i]",
+                "[class*='datum' i]",
+            ),
+        )
 
     return title, site_name, _format_date(raw_date)
 
@@ -2966,7 +3039,7 @@ def format_date_long_de(value: str) -> str:
 
 
 def article_domain(article: ArticleResult) -> str:
-    domain = urlparse(article.url).netloc.lower().removeprefix("www.")
+    domain = source_host_from_url(article.url)
     return domain or article.site_name
 
 
@@ -3151,15 +3224,15 @@ def _draw_soft_card_shadow(
 def _draw_column_site_mark(
     pdf: canvas.Canvas,
     article: ArticleResult,
-    column_x: float,
-    column_width: float,
+    align_x: float,
+    available_width: float,
     top_y: float,
     layout: PdfLayout,
 ) -> None:
     """Zeichnet Medienlogo oder Quellenname passend zur jeweiligen Spalte."""
-    logo_box_width = min(PDF_LOGO_BOX_WIDTH, column_width * 0.88)
+    logo_box_width = min(PDF_LOGO_BOX_WIDTH, available_width)
     logo_box_height = PDF_LOGO_BOX_HEIGHT
-    logo_box_x = column_x + (column_width - logo_box_width) / 2
+    logo_box_x = align_x
     logo_box_y = top_y - logo_box_height
 
     logo_drawn = False
@@ -3178,7 +3251,7 @@ def _draw_column_site_mark(
             )
             final_width = logo_width * scale
             final_height = logo_height * scale
-            x = logo_box_x + (logo_box_width - final_width) / 2
+            x = logo_box_x
             y = logo_box_y + (logo_box_height - final_height) / 2
             pdf.drawImage(
                 ImageReader(str(drawable_logo_path)),
@@ -3199,8 +3272,8 @@ def _draw_column_site_mark(
         fonts = get_pdf_font_family(layout.font_family)
         pdf.setFillColor(HexColor("#353535"))
         pdf.setFont(fonts.bold, font_size)
-        pdf.drawCentredString(
-            column_x + column_width / 2,
+        pdf.drawString(
+            align_x,
             logo_box_y + logo_box_height / 2 - font_size / 3,
             pdf_safe_text(display_name[:42]),
         )
@@ -3244,6 +3317,8 @@ def _draw_page_footer(
     page_part_indexes: list[int],
     part_total: int,
     y: float,
+    align_x: float,
+    available_width: float,
     layout: PdfLayout,
 ) -> None:
     """Zeichnet Quellen-/Datumszeile einmal pro PDF-Seite."""
@@ -3256,12 +3331,19 @@ def _draw_page_footer(
         else:
             footer_text = f"{footer_text} - Teile {first_part}-{last_part} von {part_total}"
 
-    page_w, _ = A4
-    outer_margin = 42
     fonts = get_pdf_font_family(layout.font_family)
     pdf.setFillColor(HexColor("#343434"))
-    pdf.setFont(fonts.regular, 8.5)
-    pdf.drawCentredString(page_w / 2, y, pdf_safe_text(footer_text))
+    draw_wrapped_text(
+        pdf,
+        footer_text,
+        align_x,
+        y,
+        available_width,
+        fonts.regular,
+        8.5,
+        10,
+        max_lines=2,
+    )
 
 
 def _column_image_top(content_top: float) -> float:
@@ -3315,6 +3397,36 @@ def _draw_image_column(
     card_padding: float,
     layout: PdfLayout,
 ) -> None:
+    image_x, image_y, final_width, final_height = _calculate_image_column_geometry(
+        image_part,
+        column_x,
+        column_width,
+        content_top,
+        content_bottom,
+    )
+
+    image_buffer = io.BytesIO()
+    image_part.save(image_buffer, format="JPEG", quality=91, optimize=True)
+    image_buffer.seek(0)
+    _draw_screenshot_shadow(pdf, image_x, image_y, final_width, final_height)
+    pdf.drawImage(
+        ImageReader(image_buffer),
+        image_x,
+        image_y,
+        width=final_width,
+        height=final_height,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
+
+
+def _calculate_image_column_geometry(
+    image_part: Image.Image,
+    column_x: float,
+    column_width: float,
+    content_top: float,
+    content_bottom: float,
+) -> tuple[float, float, float, float]:
     image_top = _column_image_top(content_top)
     footer_space = 32
     max_content_width = column_width
@@ -3330,18 +3442,20 @@ def _draw_image_column(
     image_x = column_x + (column_width - final_width) / 2
     image_y = image_top - final_height
 
-    image_buffer = io.BytesIO()
-    image_part.save(image_buffer, format="JPEG", quality=91, optimize=True)
-    image_buffer.seek(0)
-    pdf.drawImage(
-        ImageReader(image_buffer),
-        image_x,
-        image_y,
-        width=final_width,
-        height=final_height,
-        preserveAspectRatio=True,
-        mask="auto",
-    )
+    return image_x, image_y, final_width, final_height
+
+
+def _draw_screenshot_shadow(
+    pdf: canvas.Canvas,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
+    pdf.setFillColor(HexColor("#E7E7E7"))
+    pdf.roundRect(x + 4, y - 4, width, height, 2, fill=True, stroke=False)
+    pdf.setFillColor(HexColor("#F2F2F2"))
+    pdf.roundRect(x + 2, y - 2, width, height, 2, fill=True, stroke=False)
 
 
 def _row_whiteness_score(image: Image.Image, y: int) -> float:
@@ -3475,7 +3589,21 @@ def build_pdf(
 
             page_parts = image_parts[part_index:part_index + 2]
             page_part_indexes = [part_index + column_index + 1 for column_index, _part in enumerate(page_parts)]
-            _draw_column_site_mark(pdf, article, outer_margin, page_w - 2 * outer_margin, content_top, layout)
+            first_image_x, _first_image_y, first_image_width, _first_image_height = _calculate_image_column_geometry(
+                page_parts[0],
+                outer_margin,
+                column_width,
+                content_top,
+                content_bottom,
+            )
+            _draw_column_site_mark(
+                pdf,
+                article,
+                first_image_x,
+                first_image_width,
+                content_top,
+                layout,
+            )
             for column_index, part in enumerate(page_parts):
                 if cancel_event.is_set():
                     raise UserCancelled
@@ -3500,6 +3628,8 @@ def build_pdf(
                 page_part_indexes,
                 len(image_parts),
                 content_bottom + 8,
+                first_image_x,
+                first_image_width,
                 layout,
             )
             pdf.showPage()
