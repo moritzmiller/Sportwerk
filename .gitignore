@@ -73,3 +73,4 @@ meetings_archiv.json
 .vercel
 *.ttf
 *.mp4
+.env*
