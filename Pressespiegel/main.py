@@ -18,7 +18,7 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 try:
@@ -377,7 +377,7 @@ class UserCancelled(Exception):
 # =====================================================================
 
 
-def normalize_url(raw_url: str) -> str | None:
+def _normalize_http_url(raw_url: str) -> str | None:
     """Normalisiert eine URL und verwirft offensichtlich ungültige Eingaben."""
     value = raw_url.strip()
     if not value:
@@ -401,6 +401,40 @@ def normalize_url(raw_url: str) -> str | None:
 
     # Fragmente sind für das Laden eines Artikels normalerweise nicht relevant.
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
+
+
+def _is_google_host(hostname: str) -> bool:
+    host = hostname.lower().removeprefix("www.")
+    return host in {"google.de", "google.com"} or host.endswith(".google.de") or host.endswith(".google.com")
+
+
+def _google_redirect_target_url(normalized_url: str) -> str | None:
+    parsed = urlparse(normalized_url)
+    if not _is_google_host(parsed.hostname or ""):
+        return None
+
+    query = parse_qs(parsed.query, keep_blank_values=False)
+    for key in ("url", "u", "q"):
+        for raw_value in query.get(key, []):
+            candidate = _normalize_http_url(unquote(raw_value))
+            if candidate and not _is_google_host(urlparse(candidate).hostname or ""):
+                return candidate
+
+    marker = "/amp/s/"
+    if marker in parsed.path:
+        candidate = _normalize_http_url("https://" + parsed.path.split(marker, 1)[1])
+        if candidate:
+            return candidate
+
+    return None
+
+
+def normalize_url(raw_url: str) -> str | None:
+    """Normalisiert eine URL und entpackt Google-Weiterleitungen auf die Ziel-URL."""
+    normalized = _normalize_http_url(raw_url)
+    if normalized is None:
+        return None
+    return _google_redirect_target_url(normalized) or normalized
 
 
 def split_url_input(raw_lines: list[str]) -> list[str]:
@@ -587,6 +621,50 @@ def _format_date(raw_date: str | None) -> str:
 
     date_match = re.search(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", value)
     return date_match.group(1) if date_match else value[:30]
+
+
+def extract_canonical_article_url(html_content: str, fallback_url: str) -> str | None:
+    """Ermittelt die kanonische Artikel-URL aus Seitenmetadaten."""
+    soup = BeautifulSoup(html_content, "html.parser")
+    candidates: list[str] = []
+
+    for selector in (
+        ("meta", {"property": "og:url"}),
+        ("meta", {"name": "twitter:url"}),
+    ):
+        value = _first_meta_content(soup, [selector])
+        if value:
+            candidates.append(value)
+
+    canonical = soup.find("link", rel=lambda value: value and "canonical" in value)
+    if canonical and canonical.get("href"):
+        candidates.append(str(canonical["href"]).strip())
+
+    for script in soup.find_all("script", type="application/ld+json"):
+        raw_json = script.string or script.get_text(strip=True)
+        if not raw_json:
+            continue
+        try:
+            data = json.loads(raw_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        for node in _iter_json_nodes(data):
+            for key in ("url", "mainEntityOfPage"):
+                value = node.get(key)
+                if isinstance(value, str):
+                    candidates.append(value)
+                elif isinstance(value, dict):
+                    node_id = value.get("@id") or value.get("url")
+                    if isinstance(node_id, str):
+                        candidates.append(node_id)
+
+    for candidate in candidates:
+        normalized = normalize_url(urljoin(fallback_url, candidate))
+        if normalized and not _is_google_host(urlparse(normalized).hostname or ""):
+            return normalized
+
+    return None
 
 
 def extract_article_metadata(html_content: str, fallback_url: str) -> tuple[str, str, str]:
@@ -2347,7 +2425,13 @@ async def capture_article(
                     f"Logo fehlt fuer {site_name}. "
                     "Bitte fuege eine passende PNG- oder SVG-Datei in den Logo-Ordner ein."
                 )
-            rss_result = build_saechsische_rss_article_result(url, image_path, source_logo, logo_warning, accent_hex)
+            rss_result = build_saechsische_rss_article_result(
+                url,
+                image_path,
+                source_logo,
+                logo_warning,
+                accent_hex,
+            )
             if rss_result:
                 return rss_result
             if render_link_error_fallback(image_path, site_name, url, error_message, accent_hex):
@@ -2373,40 +2457,47 @@ async def capture_article(
         await settle_visible_page_for_capture(page, passes=2)
 
         html_content = await get_page_content_safely(page)
+        loaded_url = page.url or url
+        article_url = (
+            extract_canonical_article_url(html_content, loaded_url)
+            or normalize_url(loaded_url)
+            or normalize_url(url)
+            or url
+        )
         visible_text_raw = await evaluate_page_safely(
             page,
             "() => document.body ? document.body.innerText : ''",
         )
         visible_text = str(visible_text_raw or "")
-        title, site_name, article_date = extract_article_metadata(html_content, page.url or url)
+        title, site_name, article_date = extract_article_metadata(html_content, article_url)
         article_text_blocks = extract_article_text_blocks(html_content, title)
         is_paywalled = has_paywall_marker(html_content, visible_text)
-        source_logo = find_source_logo(source_logo_index, page.url or url, site_name)
+        source_logo = find_source_logo(source_logo_index, article_url, site_name)
         logo_warning = None
         if source_logo is None:
             logo_warning = (
-                f"Logo fehlt fuer {site_name} ({urlparse(page.url or url).netloc.removeprefix('www.')}). "
+                f"Logo fehlt fuer {site_name} ({urlparse(article_url).netloc.removeprefix('www.')}). "
                 "Bitte lege eine passende PNG- oder SVG-Datei im Logo-Ordner ab."
             )
         hero_image_path = download_article_hero_image(
             html_content,
-            page.url or url,
+            article_url,
             image_path.with_name(f"{image_path.stem}_hero.png"),
         )
 
-        if is_saechsische_url(page.url or url) and article_text_blocks:
+        if is_saechsische_url(article_url) and article_text_blocks:
             if render_article_text_fallback(
                 image_path,
                 title,
                 site_name,
                 article_date,
-                url,
+                article_url,
                 article_text_blocks,
                 hero_image_path,
                 accent_hex,
             ):
                 return ArticleResult(
-                    url=url,
+                    url=article_url,
                     title=title,
                     site_name=site_name,
                     article_date=article_date,
@@ -2422,13 +2513,13 @@ async def capture_article(
                 title,
                 site_name,
                 article_date,
-                url,
+                article_url,
                 article_text_blocks,
                 hero_image_path,
                 accent_hex,
             ):
                 return ArticleResult(
-                    url=url,
+                    url=article_url,
                     title=title,
                     site_name=site_name,
                     article_date=article_date,
@@ -2444,13 +2535,13 @@ async def capture_article(
                 title,
                 site_name,
                 article_date,
-                url,
+                article_url,
                 teaser,
                 hero_image_path,
                 accent_hex,
             ):
                 return ArticleResult(
-                    url=url,
+                    url=article_url,
                     title=title,
                     site_name=site_name,
                     article_date=article_date,
@@ -2525,13 +2616,13 @@ async def capture_article(
                 title,
                 site_name,
                 article_date,
-                url,
+                article_url,
                 article_text_blocks,
                 hero_image_path,
                 accent_hex,
             ):
                 return ArticleResult(
-                    url=url,
+                    url=article_url,
                     title=title,
                     site_name=site_name,
                     article_date=article_date,
@@ -2551,13 +2642,13 @@ async def capture_article(
                     title,
                     site_name,
                     article_date,
-                    url,
+                    article_url,
                     teaser,
                     hero_image_path,
                     accent_hex,
                 ):
                     return ArticleResult(
-                        url=url,
+                        url=article_url,
                         title=title,
                         site_name=site_name,
                         article_date=article_date,
@@ -2578,13 +2669,13 @@ async def capture_article(
                 title,
                 site_name,
                 article_date,
-                url,
+                article_url,
                 article_text_blocks,
                 hero_image_path,
                 accent_hex,
             ):
                 return ArticleResult(
-                    url=url,
+                    url=article_url,
                     title=title,
                     site_name=site_name,
                     article_date=article_date,
@@ -2594,7 +2685,7 @@ async def capture_article(
                 )
 
         return ArticleResult(
-            url=url,
+            url=article_url,
             title=title,
             site_name=site_name,
             article_date=article_date,

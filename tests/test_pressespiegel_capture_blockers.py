@@ -278,6 +278,35 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
         self.assertEqual(site_name, "www.vfb.de")
         self.assertEqual(article_date, "15.09.2026")
 
+    def test_google_result_url_is_normalized_to_target_article_url(self) -> None:
+        url = (
+            "https://www.google.de/url?"
+            "q=https%3A%2F%2Fwww.vfb.de%2Fde%2Fartikel%2F&sa=U&ved=example"
+        )
+
+        self.assertEqual(
+            pressespiegel.normalize_url(url),
+            "https://www.vfb.de/de/artikel/",
+        )
+
+    def test_canonical_article_url_ignores_google_fallback_url(self) -> None:
+        html = """
+        <html>
+          <head>
+            <meta property="og:url" content="https://www.lvz.de/lokales/leipzig/beispiel.html">
+            <link rel="canonical" href="https://www.google.de/url?q=https%3A%2F%2Fignored.example%2F">
+          </head>
+        </html>
+        """
+
+        self.assertEqual(
+            pressespiegel.extract_canonical_article_url(
+                html,
+                "https://www.google.de/url?q=https%3A%2F%2Fwww.lvz.de%2Flokales%2Fleipzig%2Fbeispiel.html",
+            ),
+            "https://www.lvz.de/lokales/leipzig/beispiel.html",
+        )
+
     def test_article_domain_keeps_www_host(self) -> None:
         article = pressespiegel.ArticleResult(url="https://www.vfb.de/de/beispiel/", site_name="VfB Stuttgart")
 
