@@ -19,16 +19,6 @@ export default async function Nav() {
                             Events
                         </Link>
                     </li>
-                    <li>
-                        <Link href="/cities" className="nav__link">
-                            Städte
-                        </Link>
-                    </li>
-                    <li>
-                        <Link href="/venues" className="nav__link">
-                            Venues
-                        </Link>
-                    </li>
                     {canUseOffers ? (
                         <li>
                             <Link href="/angebote" className="nav__link">

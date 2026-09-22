@@ -189,8 +189,6 @@ export default async function EventDetailPage({ params }) {
     const baseUrl = getAppUrl();
     const eventUrl = `${baseUrl}/events/${data.id}`;
     const icsUrl = `${baseUrl}/api/events/${data.id}/ics`;
-    const venueHref = data.venueId ? `/venues/${data.venueId}` : null;
-    const cityHref = data.city ? `/cities/${encodeURIComponent(data.city)}` : null;
     const isVerified =
         data.organizationVerificationStatus === "VERIFIED" ||
         data.venueVerificationStatus === "VERIFIED";
@@ -279,21 +277,6 @@ export default async function EventDetailPage({ params }) {
                                     </strong>
                                 </div>
                             </div>
-
-                            {(venueHref || cityHref) ? (
-                                <div className="flex wrap">
-                                    {venueHref ? (
-                                        <Link href={venueHref} className="btn btn-ghost">
-                                            Venue ansehen
-                                        </Link>
-                                    ) : null}
-                                    {cityHref ? (
-                                        <Link href={cityHref} className="btn btn-ghost">
-                                            Mehr in {data.city}
-                                        </Link>
-                                    ) : null}
-                                </div>
-                            ) : null}
 
                             {isVerified ? (
                                 <div className="trust-banner">
