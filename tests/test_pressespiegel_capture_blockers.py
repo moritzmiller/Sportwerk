@@ -289,6 +289,21 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             "https://www.vfb.de/de/artikel/",
         )
 
+    def test_prepare_urls_unwraps_gmail_google_redirects(self) -> None:
+        url = (
+            "https://www.google.com/url?"
+            "q=https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/cannstatt-singt/"
+            "&source=gmail&ust=1790149233261000&usg=example"
+        )
+
+        urls, invalid = pressespiegel.prepare_urls([url])
+
+        self.assertEqual(invalid, [])
+        self.assertEqual(
+            urls,
+            ["https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/cannstatt-singt/"],
+        )
+
     def test_canonical_article_url_wins_over_google_fallback_url(self) -> None:
         html = """
         <html>

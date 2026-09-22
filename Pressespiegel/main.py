@@ -378,7 +378,7 @@ class UserCancelled(Exception):
 # =====================================================================
 
 
-def normalize_url(raw_url: str) -> str | None:
+def _normalize_http_url(raw_url: str) -> str | None:
     """Normalisiert eine URL und verwirft offensichtlich ungültige Eingaben."""
     value = raw_url.strip()
     if not value:
@@ -404,13 +404,21 @@ def normalize_url(raw_url: str) -> str | None:
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
 
 
+def normalize_url(raw_url: str) -> str | None:
+    """Normalisiert eine URL und entpackt bekannte Redirect-Links auf die Ziel-URL."""
+    normalized = _normalize_http_url(raw_url)
+    if normalized is None:
+        return None
+    return _google_redirect_target_url(normalized) or normalized
+
+
 def _is_google_host(hostname: str) -> bool:
     host = hostname.lower().removeprefix("www.")
     return host in {"google.de", "google.com"} or host.endswith(".google.de") or host.endswith(".google.com")
 
 
 def _google_redirect_target_url(raw_url: str) -> str | None:
-    normalized_url = normalize_url(raw_url)
+    normalized_url = _normalize_http_url(raw_url)
     if normalized_url is None:
         return None
 
@@ -419,15 +427,15 @@ def _google_redirect_target_url(raw_url: str) -> str | None:
         return None
 
     query = parse_qs(parsed.query, keep_blank_values=False)
-    for key in ("url", "u", "q"):
+    for key in ("url", "u", "q", "adurl"):
         for raw_value in query.get(key, []):
-            candidate = normalize_url(unquote(raw_value))
+            candidate = _normalize_http_url(unquote(raw_value))
             if candidate and not _is_google_host(urlparse(candidate).hostname or ""):
                 return candidate
 
     marker = "/amp/s/"
     if marker in parsed.path:
-        candidate = normalize_url("https://" + parsed.path.split(marker, 1)[1])
+        candidate = _normalize_http_url("https://" + parsed.path.split(marker, 1)[1])
         if candidate:
             return candidate
 
