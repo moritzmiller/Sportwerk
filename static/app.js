@@ -481,11 +481,11 @@ document.querySelectorAll(".file-picker input[type='file']").forEach((input) => 
   input.addEventListener("change", () => {
     const label = input.closest(".file-picker").querySelector("strong");
     if (input.name === "source_logos") {
-      const files = [...(input.files || [])].filter((file) => file.name.toLowerCase().endsWith(".png"));
+      const files = [...(input.files || [])].filter((file) => /\.(png|svg)$/i.test(file.name));
       const firstPath = files[0]?.webkitRelativePath || "";
       const folderName = firstPath.split("/")[0] || "";
       label.textContent = files.length
-        ? `${folderName || "Logo-Ordner"} (${files.length} PNG)`
+        ? `${folderName || "Logo-Ordner"} (${files.length} PNG/SVG)`
         : "Kein Ordner ausgewählt";
       return;
     }

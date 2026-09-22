@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -53,7 +54,7 @@ PDF_LOGO_BOX_HEIGHT = 34
 PDF_SECTION_TITLE_FONT_SIZE = 28
 PDF_SECTION_TITLE_LINE_HEIGHT = 34
 PDF_SECTION_TITLE_MAX_LINES = 4
-SOURCE_LOGO_SUFFIXES = {".png"}
+SOURCE_LOGO_SUFFIXES = {".png", ".svg"}
 LOGO_STOP_WORDS = {
     "logo",
     "logos",
@@ -2998,6 +2999,69 @@ def logo_match_keys(url: str, site_name: str) -> set[str]:
     return {key for candidate in candidates if (key := normalize_logo_key(candidate))}
 
 
+def is_valid_svg_logo(logo_path: Path) -> bool:
+    try:
+        root = ET.parse(logo_path).getroot()
+    except (ET.ParseError, OSError, ValueError):
+        return False
+    return root.tag.lower().endswith("svg")
+
+
+def _rasterize_svg_logo_with_playwright(logo_path: Path, target_path: Path) -> None:
+    from playwright.sync_api import sync_playwright
+
+    svg_data = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+    html = (
+        "<!doctype html><html><body style=\"margin:0;background:transparent\">"
+        f"<img id=\"logo\" src=\"data:image/svg+xml;base64,{svg_data}\" "
+        "style=\"display:block;max-width:1600px;max-height:800px\">"
+        "</body></html>"
+    )
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={"width": 1600, "height": 800}, device_scale_factor=2)
+            page.set_content(html, wait_until="load")
+            page.wait_for_selector("#logo", state="visible", timeout=5_000)
+            page.locator("#logo").screenshot(path=str(target_path), omit_background=True)
+        finally:
+            browser.close()
+
+
+def rasterize_svg_logo(logo_path: Path) -> Path | None:
+    target_path = logo_path.with_name(f"{logo_path.stem}__svg.png")
+    try:
+        if target_path.exists() and target_path.stat().st_mtime >= logo_path.stat().st_mtime:
+            return target_path
+
+        error: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                _rasterize_svg_logo_with_playwright(logo_path, target_path)
+            except BaseException as exc:
+                error.append(exc)
+
+        thread = threading.Thread(target=worker, name="PressespiegelSvgLogoRasterizer")
+        thread.start()
+        thread.join()
+        if error:
+            raise error[0]
+
+        with Image.open(target_path) as image:
+            image.verify()
+        return target_path
+    except Exception:
+        target_path.unlink(missing_ok=True)
+        return None
+
+
+def readable_source_logo_path(logo_path: Path) -> Path | None:
+    if logo_path.suffix.lower() == ".svg":
+        return rasterize_svg_logo(logo_path)
+    return logo_path
+
+
 def build_source_logo_index(source_logo_dir: Path | None) -> dict[str, Path]:
     if source_logo_dir is None or not source_logo_dir.exists() or not source_logo_dir.is_dir():
         return {}
@@ -3006,11 +3070,15 @@ def build_source_logo_index(source_logo_dir: Path | None) -> dict[str, Path]:
     for logo_path in sorted(source_logo_dir.rglob("*")):
         if logo_path.suffix.lower() not in SOURCE_LOGO_SUFFIXES or not logo_path.is_file():
             continue
-        try:
-            with Image.open(logo_path) as image:
-                image.verify()
-        except (OSError, ValueError):
-            continue
+        if logo_path.suffix.lower() == ".svg":
+            if not is_valid_svg_logo(logo_path):
+                continue
+        else:
+            try:
+                with Image.open(logo_path) as image:
+                    image.verify()
+            except (OSError, ValueError):
+                continue
 
         stem_key = normalize_logo_key(logo_path.stem)
         if stem_key:
@@ -3097,7 +3165,11 @@ def _draw_column_site_mark(
     logo_drawn = False
     if article.logo_path and article.logo_path.exists():
         try:
-            with Image.open(article.logo_path) as logo_image:
+            drawable_logo_path = readable_source_logo_path(article.logo_path)
+            if drawable_logo_path is None:
+                raise ValueError("Quellenlogo konnte nicht gelesen werden.")
+
+            with Image.open(drawable_logo_path) as logo_image:
                 logo_width, logo_height = logo_image.size
 
             scale = min(
@@ -3109,7 +3181,7 @@ def _draw_column_site_mark(
             x = logo_box_x + (logo_box_width - final_width) / 2
             y = logo_box_y + (logo_box_height - final_height) / 2
             pdf.drawImage(
-                ImageReader(str(article.logo_path)),
+                ImageReader(str(drawable_logo_path)),
                 x,
                 y,
                 width=final_width,

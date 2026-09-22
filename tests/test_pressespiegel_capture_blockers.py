@@ -253,6 +253,27 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             )
         )
 
+    def test_source_logo_index_accepts_svg_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            logo_path = logo_dir / "lvz.svg"
+            logo_path.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">'
+                '<rect width="120" height="40" fill="#111111"/></svg>',
+                encoding="utf-8",
+            )
+
+            index = pressespiegel.build_source_logo_index(logo_dir)
+
+            self.assertEqual(
+                pressespiegel.find_source_logo(
+                    index,
+                    "https://www.lvz.de/lokales/leipzig/beispiel.html",
+                    "Leipziger Volkszeitung",
+                ),
+                logo_path,
+            )
+
 
 class PressespiegelBrowserCleanupTests(unittest.IsolatedAsyncioTestCase):
     async def test_clean_visible_page_removes_access_dialog_but_keeps_article(self) -> None:

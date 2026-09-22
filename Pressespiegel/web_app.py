@@ -36,6 +36,7 @@ from main import (
     RADIO_DRESDEN_PROFILE_DIR,
     SAECHSISCHE_LOGIN_URL,
     SAECHSISCHE_PROFILE_DIR,
+    SOURCE_LOGO_SUFFIXES,
     freie_presse_storage_state_path,
     has_persistent_profile_state,
     has_freie_presse_auth_state,
@@ -1170,8 +1171,8 @@ def save_source_logo_uploads(job_id: str) -> tuple[Path | None, list[str]]:
         safe_name = secure_filename(Path(upload.filename).name)
         if not safe_name:
             continue
-        if Path(safe_name).suffix.lower() != ".png":
-            invalid.append(f"{upload.filename}: nur PNG-Dateien werden als Quellenlogo akzeptiert")
+        if Path(safe_name).suffix.lower() not in SOURCE_LOGO_SUFFIXES:
+            invalid.append(f"{upload.filename}: nur PNG- oder SVG-Dateien werden als Quellenlogo akzeptiert")
             continue
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / safe_name
