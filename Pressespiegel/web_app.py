@@ -53,6 +53,7 @@ from main import (
     launch_persistent_source_context,
     load_custom_layout_config,
     normalize_hex_color,
+    normalize_url,
     prepare_section_groups,
     prepare_urls,
     radio_dresden_storage_state_path,
@@ -71,7 +72,7 @@ TRELLO_DIR = SPORTWERK_DIR / "Trello"
 PARTICIPATION_DIR = SPORTWERK_DIR / "Teilnahmebedingungen"
 TEMPLATE_DIR = SPORTWERK_DIR / "templates"
 STATIC_DIR = SPORTWERK_DIR / "static"
-FAVICON_PATH = SPORTWERK_DIR / "src" / "app" / "favicon.ico"
+FAVICON_PATH = SPORTWERK_DIR / "src" / "app" / "favicon.png"
 INSTANCE_DIR = BASE_DIR / "instance"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
 OUTPUT_DIR = INSTANCE_DIR / "outputs"
@@ -145,7 +146,7 @@ def inject_app_version() -> dict[str, str]:
     return {"app_version": get_app_version()}
 
 
-@app.get("/favicon.ico")
+@app.get("/favicon.png")
 def favicon():
     if not FAVICON_PATH.exists():
         return "", 404
@@ -254,6 +255,30 @@ def save_job_state(kind: str, job_id: str, job: dict[str, Any]) -> None:
     temp_path.replace(target_path)
 
 
+def normalize_pressespiegel_job_state(job: dict[str, Any]) -> dict[str, Any]:
+    summary = job.get("summary")
+    if not isinstance(summary, dict):
+        return job
+
+    articles = summary.get("articles")
+    if not isinstance(articles, list):
+        return job
+
+    normalized_articles: list[Any] = []
+    for article in articles:
+        if not isinstance(article, dict):
+            normalized_articles.append(article)
+            continue
+        normalized_article = dict(article)
+        article_url = normalized_article.get("url")
+        if isinstance(article_url, str):
+            normalized_article["url"] = normalize_url(article_url) or article_url
+        normalized_articles.append(normalized_article)
+
+    normalized_summary = {**summary, "articles": normalized_articles}
+    return {**job, "summary": normalized_summary}
+
+
 def load_job_state(kind: str, job_id: str) -> dict[str, Any] | None:
     target_path = job_state_path(kind, job_id)
     if not target_path.exists():
@@ -262,7 +287,14 @@ def load_job_state(kind: str, job_id: str) -> dict[str, Any] | None:
         data = json.loads(target_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    if kind == "pressespiegel":
+        normalized_data = normalize_pressespiegel_job_state(data)
+        if normalized_data != data:
+            save_job_state(kind, job_id, normalized_data)
+        return normalized_data
+    return data
 
 
 def load_saved_pressespiegel_items() -> list[dict[str, Any]]:
@@ -275,7 +307,19 @@ def load_saved_pressespiegel_items() -> list[dict[str, Any]]:
     items = data.get("items") if isinstance(data, dict) else data
     if not isinstance(items, list):
         return []
-    return [item for item in items if isinstance(item, dict)]
+    normalized_items = [normalize_saved_pressespiegel_item(item) for item in items if isinstance(item, dict)]
+    if normalized_items != items:
+        save_saved_pressespiegel_items(normalized_items)
+    return normalized_items
+
+
+def normalize_saved_pressespiegel_item(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    sections, _section_errors = prepare_section_groups(parse_saved_sections(item.get("sections")))
+    fallback_urls, _fallback_errors = prepare_urls(parse_saved_url_lines(item.get("fallback_urls")))
+    normalized["sections"] = [{"heading": section.heading, "urls": section.urls} for section in sections]
+    normalized["fallback_urls"] = fallback_urls
+    return normalized
 
 
 def save_saved_pressespiegel_items(items: list[dict[str, Any]]) -> None:
@@ -1423,7 +1467,7 @@ def append_participation_job_log(job_id: str, message: str) -> None:
 
 def article_to_dict(article) -> dict[str, Any]:
     return {
-        "url": article.url,
+        "url": article.source_url or article.url,
         "title": article.title,
         "site_name": article.site_name,
         "article_date": article.article_date,

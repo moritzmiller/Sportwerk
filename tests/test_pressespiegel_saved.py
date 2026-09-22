@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,13 +19,16 @@ class SavedPressespiegelTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.original_saved_path = web_app.SAVED_PRESSESPIEGEL_PATH
+        self.original_job_state_dir = web_app.JOB_STATE_DIR
         web_app.SAVED_PRESSESPIEGEL_PATH = Path(self.temp_dir.name) / "saved.json"
+        web_app.JOB_STATE_DIR = Path(self.temp_dir.name) / "job-state"
         self.client = sportwerk_entrypoint.app.test_client()
         with self.client.session_transaction() as session:
             session["user"] = {"name": "Test", "email": "test@sportwerk.local"}
 
     def tearDown(self) -> None:
         web_app.SAVED_PRESSESPIEGEL_PATH = self.original_saved_path
+        web_app.JOB_STATE_DIR = self.original_job_state_dir
         self.temp_dir.cleanup()
 
     def test_saved_pressespiegel_can_be_loaded_updated_and_deleted(self) -> None:
@@ -80,6 +84,67 @@ class SavedPressespiegelTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Artikel-URL", response.get_json()["error"])
+
+    def test_saved_pressespiegel_load_migrates_google_redirect_urls(self) -> None:
+        google_url = (
+            "https://www.google.com/url?"
+            "q=https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/cannstatt-singt/"
+            "&source=gmail&ust=1790149233261000&usg=example"
+        )
+        direct_url = "https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/cannstatt-singt/"
+        web_app.SAVED_PRESSESPIEGEL_PATH.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "saved-id",
+                            "name": "Cannstatt singt",
+                            "sections": [{"heading": "Regionale Presse", "urls": [google_url, direct_url]}],
+                            "fallback_urls": [],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        items = web_app.load_saved_pressespiegel_items()
+
+        expected_url = "https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/cannstatt-singt/"
+        self.assertEqual(items[0]["sections"][0]["urls"], [expected_url, expected_url])
+        self.assertEqual(web_app.saved_pressespiegel_url_count(items[0]), 2)
+        saved_payload = json.loads(web_app.SAVED_PRESSESPIEGEL_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(saved_payload["items"][0]["sections"][0]["urls"], [expected_url, expected_url])
+
+    def test_pressespiegel_job_state_load_migrates_summary_urls(self) -> None:
+        google_url = (
+            "https://www.google.de/url?"
+            "q=https%3A%2F%2Fwww.vfb.de%2Fde%2Fartikel%2F&sa=U&ved=example"
+        )
+        web_app.save_job_state(
+            "pressespiegel",
+            "job-id",
+            {
+                "id": "job-id",
+                "summary": {
+                    "articles": [
+                        {
+                            "url": google_url,
+                            "title": "Cannstatt singt",
+                            "successful": True,
+                        }
+                    ]
+                },
+            },
+        )
+
+        job = web_app.load_job_state("pressespiegel", "job-id")
+
+        self.assertIsNotNone(job)
+        expected_url = "https://www.vfb.de/de/artikel/"
+        self.assertEqual(job["summary"]["articles"][0]["url"], expected_url)
+        saved_job = json.loads(web_app.job_state_path("pressespiegel", "job-id").read_text(encoding="utf-8"))
+        self.assertEqual(saved_job["summary"]["articles"][0]["url"], expected_url)
 
 
 if __name__ == "__main__":

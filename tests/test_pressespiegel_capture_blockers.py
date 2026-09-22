@@ -304,6 +304,15 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
             ["https://www.vfb.de/de/vfb/aktuell/neues/verein/2026/cannstatt-singt/"],
         )
 
+    def test_prepare_urls_preserves_duplicate_article_entries(self) -> None:
+        direct_url = "https://www.vfb.de/de/artikel/"
+        redirect_url = "https://www.google.de/url?q=https%3A%2F%2Fwww.vfb.de%2Fde%2Fartikel%2F"
+
+        urls, invalid = pressespiegel.prepare_urls([direct_url, redirect_url])
+
+        self.assertEqual(invalid, [])
+        self.assertEqual(urls, [direct_url, direct_url])
+
     def test_canonical_article_url_wins_over_google_fallback_url(self) -> None:
         html = """
         <html>

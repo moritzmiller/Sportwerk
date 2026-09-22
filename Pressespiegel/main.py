@@ -454,10 +454,9 @@ def split_url_input(raw_lines: list[str]) -> list[str]:
 
 
 def prepare_urls(raw_lines: list[str]) -> tuple[list[str], list[str]]:
-    """Validiert URLs, entfernt Duplikate und liefert ungültige Zeilen separat zurück."""
+    """Validiert URLs und liefert ungültige Zeilen separat zurück."""
     valid: list[str] = []
     invalid: list[str] = []
-    seen: set[str] = set()
 
     for raw_line in split_url_input(raw_lines):
         normalized = normalize_url(raw_line)
@@ -465,9 +464,7 @@ def prepare_urls(raw_lines: list[str]) -> tuple[list[str], list[str]]:
             if raw_line.strip():
                 invalid.append(raw_line.strip())
             continue
-        if normalized not in seen:
-            seen.add(normalized)
-            valid.append(normalized)
+        valid.append(normalized)
 
     return valid, invalid
 
@@ -476,7 +473,6 @@ def prepare_section_groups(raw_groups: list[tuple[str, list[str]]]) -> tuple[lis
     """Validiert Abschnittsgruppen aus Überschrift und URL-Zeilen."""
     sections: list[SectionPlanEntry] = []
     invalid: list[str] = []
-    seen: set[str] = set()
 
     for group_index, (raw_heading, raw_url_lines) in enumerate(raw_groups, start=1):
         heading = re.sub(r"\s+", " ", raw_heading).strip()
@@ -494,9 +490,6 @@ def prepare_section_groups(raw_groups: list[tuple[str, list[str]]]) -> tuple[lis
             if normalized is None:
                 invalid.append(f"{heading}: {raw_line.strip()}")
                 continue
-            if normalized in seen:
-                continue
-            seen.add(normalized)
             urls.append(normalized)
 
         if not urls:
