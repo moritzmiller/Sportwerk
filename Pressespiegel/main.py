@@ -2272,7 +2272,7 @@ async def capture_article(
             if source_logo is None:
                 logo_warning = (
                     f"Logo fehlt fuer {site_name}. "
-                    "Bitte fuege eine passende PNG-Datei in den Logo-Ordner ein."
+                    "Bitte fuege eine passende PNG- oder SVG-Datei in den Logo-Ordner ein."
                 )
             rss_result = build_saechsische_rss_article_result(url, image_path, source_logo, logo_warning, accent_hex)
             if rss_result:
@@ -2313,7 +2313,7 @@ async def capture_article(
         if source_logo is None:
             logo_warning = (
                 f"Logo fehlt fuer {site_name} ({urlparse(page.url or url).netloc.removeprefix('www.')}). "
-                "Bitte lege eine passende PNG-Datei im Logo-Ordner ab."
+                "Bitte lege eine passende PNG- oder SVG-Datei im Logo-Ordner ab."
             )
         hero_image_path = download_article_hero_image(
             html_content,
@@ -3634,7 +3634,7 @@ async def core_build_pressespiegel(
                                 article.logo_warning = (
                                     f"Logo fehlt fuer {article.site_name} "
                                     f"({urlparse(article.url).netloc.removeprefix('www.')}). "
-                                    "Bitte fuege eine passende PNG-Datei in den Logo-Ordner ein."
+                                    "Bitte fuege eine passende PNG- oder SVG-Datei in den Logo-Ordner ein."
                                 )
                             if pending_section_heading:
                                 article.section_heading = pending_section_heading
