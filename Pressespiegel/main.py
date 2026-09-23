@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
@@ -66,6 +67,8 @@ LOGO_STOP_WORDS = {
     "nachrichten",
     "www",
 }
+LOGO_INDEX_ALL_KEY = "__all__"
+LOGO_DERIVED_SUFFIX = "__svg"
 
 StatusCallback = Callable[[str], None]
 ProgressCallback = Callable[[float], None]
@@ -3150,15 +3153,21 @@ def article_domain(article: ArticleResult) -> str:
 
 
 def normalize_logo_key(value: str) -> str:
-    normalized = value.lower()
+    normalized = value.strip().lower()
     replacements = {
         "ä": "ae",
         "ö": "oe",
         "ü": "ue",
         "ß": "ss",
+        "Ã¤": "ae",
+        "Ã¶": "oe",
+        "Ã¼": "ue",
+        "ÃŸ": "ss",
     }
     for source, target in replacements.items():
         normalized = normalized.replace(source, target)
+    normalized = unicodedata.normalize("NFKD", normalized)
+    normalized = "".join(character for character in normalized if not unicodedata.combining(character))
     normalized = normalized.removeprefix("www.")
     normalized = re.sub(r"\.(de|com|net|org|info|eu|io)$", "", normalized)
     tokens = [
@@ -3169,13 +3178,60 @@ def normalize_logo_key(value: str) -> str:
     return "".join(tokens)
 
 
-def logo_match_keys(url: str, site_name: str) -> set[str]:
+def logo_match_keys(url: str, site_name: str) -> list[str]:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower().removeprefix("www.")
-    host_parts = [part for part in host.split(".") if part and part not in {"de", "com", "net", "org", "eu"}]
-    candidates = {host, ".".join(host_parts), "".join(host_parts), site_name}
-    candidates.update(host_parts)
-    return {key for candidate in candidates if (key := normalize_logo_key(candidate))}
+    host_parts = [
+        part
+        for part in host.split(".")
+        if part and part not in {"de", "com", "net", "org", "eu", "info", "io"}
+    ]
+    registrable_host = ".".join(host_parts[-2:]) if len(host_parts) >= 2 else ".".join(host_parts)
+    candidates = [
+        host,
+        registrable_host,
+        "".join(host_parts),
+        *reversed(host_parts),
+        site_name,
+    ]
+    keys: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = normalize_logo_key(candidate)
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
+def _add_logo_index_entry(index: dict[str, list[Path]], key: str, logo_path: Path) -> None:
+    if not key:
+        return
+    candidates = index.setdefault(key, [])
+    if logo_path not in candidates:
+        candidates.append(logo_path)
+
+
+def _logo_stem_key(logo_path: Path) -> str:
+    stem = logo_path.stem
+    if stem.lower().endswith(LOGO_DERIVED_SUFFIX):
+        stem = stem[: -len(LOGO_DERIVED_SUFFIX)]
+    return normalize_logo_key(stem)
+
+
+def _logo_token_keys(logo_path: Path) -> list[str]:
+    stem = logo_path.stem
+    if stem.lower().endswith(LOGO_DERIVED_SUFFIX):
+        stem = stem[: -len(LOGO_DERIVED_SUFFIX)]
+    keys: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"[A-Za-z0-9ÄÖÜäöüßÃ]+", stem):
+        key = normalize_logo_key(token)
+        if len(key) < 3 or key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+    return keys
 
 
 def is_valid_svg_logo(logo_path: Path) -> bool:
@@ -3241,13 +3297,15 @@ def readable_source_logo_path(logo_path: Path) -> Path | None:
     return logo_path
 
 
-def build_source_logo_index(source_logo_dir: Path | None) -> dict[str, Path]:
+def build_source_logo_index(source_logo_dir: Path | None) -> dict[str, list[Path]]:
     if source_logo_dir is None or not source_logo_dir.exists() or not source_logo_dir.is_dir():
         return {}
 
-    index: dict[str, Path] = {}
+    index: dict[str, list[Path]] = {}
     for logo_path in sorted(source_logo_dir.rglob("*")):
         if logo_path.suffix.lower() not in SOURCE_LOGO_SUFFIXES or not logo_path.is_file():
+            continue
+        if logo_path.stem.lower().endswith(LOGO_DERIVED_SUFFIX):
             continue
         if logo_path.suffix.lower() == ".svg":
             if not is_valid_svg_logo(logo_path):
@@ -3259,22 +3317,53 @@ def build_source_logo_index(source_logo_dir: Path | None) -> dict[str, Path]:
             except (OSError, ValueError):
                 continue
 
-        stem_key = normalize_logo_key(logo_path.stem)
-        if stem_key:
-            index.setdefault(stem_key, logo_path)
+        stem_key = _logo_stem_key(logo_path)
+        _add_logo_index_entry(index, stem_key, logo_path)
+        _add_logo_index_entry(index, LOGO_INDEX_ALL_KEY, logo_path)
 
-        for token in re.findall(r"[a-zA-Z0-9]+", logo_path.stem):
-            token_key = normalize_logo_key(token)
-            if token_key:
-                index.setdefault(token_key, logo_path)
+        for token_key in _logo_token_keys(logo_path):
+            _add_logo_index_entry(index, token_key, logo_path)
     return index
 
 
-def find_source_logo(source_logo_index: dict[str, Path], url: str, site_name: str) -> Path | None:
-    for key in logo_match_keys(url, site_name):
-        logo_path = source_logo_index.get(key)
-        if logo_path is not None:
-            return logo_path
+def _score_source_logo_candidate(logo_path: Path, key: str, key_priority: int) -> int:
+    stem_key = _logo_stem_key(logo_path)
+    token_keys = set(_logo_token_keys(logo_path))
+
+    if stem_key == key:
+        match_score = 1_000
+    elif stem_key.endswith(key) and len(key) >= 4:
+        match_score = 850
+    elif key in token_keys and len(key) >= 4:
+        match_score = 700
+    elif key in stem_key and len(key) >= 5:
+        match_score = 550
+    elif stem_key in key and len(stem_key) >= 5:
+        match_score = 520
+    else:
+        return 0
+
+    specificity = min(len(stem_key), 80)
+    return match_score + specificity - key_priority
+
+
+def find_source_logo(source_logo_index: dict[str, list[Path]], url: str, site_name: str) -> Path | None:
+    best_match: tuple[int, str, str, Path] | None = None
+    for key_priority, key in enumerate(logo_match_keys(url, site_name)):
+        for logo_path in source_logo_index.get(key, []):
+            score = _score_source_logo_candidate(logo_path, key, key_priority)
+            if score <= 0:
+                continue
+            candidate = (score, logo_path.name.casefold(), str(logo_path).casefold(), logo_path)
+            if best_match is None or candidate > best_match:
+                best_match = candidate
+
+    if best_match is not None:
+        return best_match[3]
+
+    all_logos = source_logo_index.get(LOGO_INDEX_ALL_KEY, [])
+    if len(all_logos) == 1:
+        return all_logos[0]
     return None
 
 

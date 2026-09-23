@@ -367,6 +367,62 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
                 logo_path,
             )
 
+    def test_source_logo_matching_prefers_exact_stem_over_shared_token(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            die_zeit_logo = logo_dir / "logo_die-zeit.png"
+            zeit_logo = logo_dir / "logo_zeit.png"
+            Image.new("RGB", (80, 30), "#111111").save(die_zeit_logo)
+            Image.new("RGB", (80, 30), "#222222").save(zeit_logo)
+
+            index = pressespiegel.build_source_logo_index(logo_dir)
+
+            self.assertEqual(
+                pressespiegel.find_source_logo(index, "https://www.zeit.de/sport/beispiel", "ZEIT ONLINE"),
+                zeit_logo,
+            )
+
+    def test_source_logo_matching_prefers_domain_logo_over_related_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            die_sachsen_logo = logo_dir / "logo_die-sachsen.png"
+            sachsen_logo = logo_dir / "logo_sachsen.png"
+            Image.new("RGB", (80, 30), "#111111").save(die_sachsen_logo)
+            Image.new("RGB", (80, 30), "#222222").save(sachsen_logo)
+
+            index = pressespiegel.build_source_logo_index(logo_dir)
+
+            self.assertEqual(
+                pressespiegel.find_source_logo(index, "https://www.sachsen.de/presse/beispiel", "Sachsen"),
+                sachsen_logo,
+            )
+
+    def test_source_logo_matching_normalizes_umlauts_for_site_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            logo_path = logo_dir / "logo_saechsische.png"
+            Image.new("RGB", (80, 30), "#111111").save(logo_path)
+
+            index = pressespiegel.build_source_logo_index(logo_dir)
+
+            self.assertEqual(
+                pressespiegel.find_source_logo(index, "https://www.saechsische.de/sport/beispiel", "Sächsische Zeitung"),
+                logo_path,
+            )
+
+    def test_single_source_logo_is_used_as_safe_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            logo_path = logo_dir / "uploaded-logo.png"
+            Image.new("RGB", (80, 30), "#111111").save(logo_path)
+
+            index = pressespiegel.build_source_logo_index(logo_dir)
+
+            self.assertEqual(
+                pressespiegel.find_source_logo(index, "https://example.com/artikel", "Unbekannte Quelle"),
+                logo_path,
+            )
+
     def test_pdf_image_column_starts_at_logo_edge_when_height_limited(self) -> None:
         image = Image.new("RGB", (400, 1200), "#FFFFFF")
 
