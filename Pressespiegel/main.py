@@ -3545,7 +3545,7 @@ def _calculate_image_column_geometry(
     final_width = image_part.width * scale
     final_height = image_part.height * scale
 
-    image_x = column_x + (column_width - final_width) / 2
+    image_x = column_x
     image_y = image_top - final_height
 
     return image_x, image_y, final_width, final_height

@@ -367,6 +367,20 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
                 logo_path,
             )
 
+    def test_pdf_image_column_starts_at_logo_edge_when_height_limited(self) -> None:
+        image = Image.new("RGB", (400, 1200), "#FFFFFF")
+
+        image_x, _image_y, final_width, _final_height = pressespiegel._calculate_image_column_geometry(
+            image,
+            column_x=42,
+            column_width=240,
+            content_top=780,
+            content_bottom=48,
+        )
+
+        self.assertEqual(image_x, 42)
+        self.assertLess(final_width, 240)
+
 
 class PressespiegelBrowserCleanupTests(unittest.IsolatedAsyncioTestCase):
     async def test_clean_visible_page_removes_access_dialog_but_keeps_article(self) -> None:
