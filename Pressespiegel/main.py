@@ -131,7 +131,7 @@ def acquire_freie_presse_profile_lock():
     try:
         try:
             os.fchmod(handle.fileno(), 0o600)
-        except OSError:
+        except (AttributeError, OSError):
             pass
         if os.name == "nt":
             import msvcrt
