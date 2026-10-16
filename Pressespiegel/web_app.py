@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import requests
-from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from playwright.async_api import Error as PlaywrightError
@@ -49,6 +49,7 @@ from main import (
     PdfLayout,
     SectionPlanEntry,
     core_build_pressespiegel,
+    acquire_freie_presse_profile_lock,
     layout_to_dict,
     launch_persistent_source_context,
     load_custom_layout_config,
@@ -58,6 +59,7 @@ from main import (
     prepare_urls,
     radio_dresden_storage_state_path,
     register_custom_pdf_font,
+    release_freie_presse_profile_lock,
     saechsische_storage_state_path,
     save_custom_layout_config,
     validate_background_image,
@@ -157,6 +159,14 @@ JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
 SAVED_PRESSESPIEGEL_LOCK = threading.Lock()
 FREIE_PRESSE_AUTH_LOCK = threading.Lock()
+FREIE_PRESSE_REMOTE_LOCK = threading.Lock()
+FREIE_PRESSE_REMOTE: dict[str, Any] = {
+    "loop": None,
+    "context": None,
+    "profile_lock": None,
+    "action_lock": None,
+    "finish": threading.Event(),
+}
 FREIE_PRESSE_AUTH_JOB: dict[str, Any] = {
     "state": "idle",
     "message": "Kein Loginvorgang aktiv.",
@@ -405,6 +415,10 @@ def login_context_is_open(context) -> bool:
 async def try_write_storage_state(context, storage_state_path: Path) -> bool:
     try:
         await context.storage_state(path=str(storage_state_path))
+        try:
+            storage_state_path.chmod(0o600)
+        except OSError:
+            pass
         return True
     except PlaywrightError as exc:
         if "Target page, context or browser has been closed" in str(exc):
@@ -420,51 +434,109 @@ async def run_source_login_capture(
     storage_state_path: Path,
     set_job,
 ) -> None:
-    storage_state_path.parent.mkdir(parents=True, exist_ok=True)
-    profile_dir.mkdir(parents=True, exist_ok=True)
-
-    set_job("running", "Loginfenster wird geoeffnet.")
+    storage_state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
+        storage_state_path.parent.chmod(0o700)
+        profile_dir.chmod(0o700)
+    except OSError:
+        pass
+    profile_lock = acquire_freie_presse_profile_lock()
+    if profile_lock is None:
+        set_job(
+            "failed",
+            "Das Freie-Presse-Profil ist belegt oder für den Server nicht zugänglich. "
+            "Bitte laufende Jobs beenden und Dateiberechtigungen prüfen.",
+        )
+        return
+
+    pending_marker = profile_dir.parent / ".login-pending"
+    remote_context = None
+    final_state_saved = False
+    completed_by_admin = False
+    set_job("running", "Sicherer Login-Browser wird gestartet.")
+    try:
+        if not has_freie_presse_auth_state():
+            pending_marker.write_text("Login noch nicht bestätigt.\n", encoding="utf-8")
+            try:
+                pending_marker.chmod(0o600)
+            except OSError:
+                pass
         async with async_playwright() as playwright:
             context = await launch_persistent_source_context(
                 playwright,
                 profile_dir,
-                headless=False,
-                login_window=True,
+                headless=True,
             )
+            remote_context = context
+            loop = asyncio.get_running_loop()
+            with FREIE_PRESSE_REMOTE_LOCK:
+                FREIE_PRESSE_REMOTE.update(
+                    {
+                        "loop": loop,
+                        "context": context,
+                        "profile_lock": profile_lock,
+                        "action_lock": asyncio.Lock(),
+                        "finish": threading.Event(),
+                    }
+                )
             try:
                 page = context.pages[0] if context.pages else await context.new_page()
+                await page.set_viewport_size({"width": 1440, "height": 1000})
                 await page.goto(login_url, wait_until="domcontentloaded", timeout=45_000)
                 set_job(
                     "running",
-                    "Loginfenster ist offen. Nach dem Einloggen kann das Fenster geschlossen werden.",
+                    "Freie Presse im eingeblendeten Browser anmelden. Danach „Session speichern“ wählen.",
                 )
 
-                saved_state = await try_write_storage_state(context, storage_state_path)
+                await try_write_storage_state(context, storage_state_path)
                 deadline = time.monotonic() + 15 * 60
                 while time.monotonic() < deadline:
+                    finish_event = FREIE_PRESSE_REMOTE["finish"]
+                    if finish_event.is_set():
+                        completed_by_admin = True
+                        break
                     if not login_context_is_open(context):
                         break
-                    saved_state = await try_write_storage_state(context, storage_state_path) or saved_state
+                    await try_write_storage_state(context, storage_state_path)
                     await asyncio.sleep(5)
 
                 if login_context_is_open(context):
-                    saved_state = await try_write_storage_state(context, storage_state_path) or saved_state
+                    final_state_saved = await try_write_storage_state(context, storage_state_path)
             finally:
                 try:
                     await context.close()
                 except PlaywrightError:
                     pass
 
-        if saved_state or profile_dir.exists():
+        if completed_by_admin and final_state_saved:
+            try:
+                pending_marker.unlink(missing_ok=True)
+            except OSError:
+                pass
             set_job("finished", f"{label}-Login wurde gespeichert.")
         else:
-            set_job("failed", f"{label}-Login konnte nicht gespeichert werden.")
+            set_job(
+                "failed",
+                f"{label}-Login wurde nicht bestätigt. Bitte erneut starten und nach erfolgreicher Anmeldung "
+                "„Session speichern“ wählen.",
+            )
     except Exception as exc:
-        set_job(
-            "failed",
-            f"{label}-Login konnte nicht gespeichert werden: {exc}",
+        # Do not expose browser URLs, profile paths, or request data in the UI.
+        message = (
+            "Headless Chromium konnte nicht gestartet werden. Bitte Playwright-Chromium "
+            "und dessen Linux-Abhängigkeiten auf dem Server prüfen."
+            if isinstance(exc, PlaywrightError)
+            else "Der Loginvorgang ist fehlgeschlagen. Bitte erneut versuchen oder Serverprotokolle prüfen."
         )
+        set_job("failed", f"{label}-Login fehlgeschlagen. {message}")
+    finally:
+        with FREIE_PRESSE_REMOTE_LOCK:
+            if FREIE_PRESSE_REMOTE.get("context") is remote_context:
+                FREIE_PRESSE_REMOTE.update(
+                    {"loop": None, "context": None, "profile_lock": None, "action_lock": None}
+                )
+        release_freie_presse_profile_lock(profile_lock)
 
 
 def browser_executable_candidates() -> list[Path]:
@@ -681,13 +753,136 @@ def freie_presse_auth_status_payload() -> dict[str, Any]:
         "message": job.get("message") or "",
         "started_at": job.get("started_at"),
         "updated_at": job.get("updated_at"),
-        "storage_state_path": str(storage_state_path),
+        "remote_control": job.get("state") == "running",
         "storage_state_updated_at": (
             iso_from_timestamp(storage_state_path.stat().st_mtime)
             if storage_state_path.exists()
             else None
         ),
     }
+
+
+def _check_same_origin_post() -> bool:
+    if request.headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+        return False
+    origin = request.headers.get("Origin")
+    if not origin:
+        return True
+    parsed_origin = urlparse(origin)
+    return (
+        parsed_origin.scheme.lower() == request.scheme.lower()
+        and parsed_origin.netloc.lower() == request.host.lower()
+    )
+
+
+def _run_freie_presse_browser_command(command):
+    with FREIE_PRESSE_REMOTE_LOCK:
+        loop = FREIE_PRESSE_REMOTE.get("loop")
+        context = FREIE_PRESSE_REMOTE.get("context")
+        action_lock = FREIE_PRESSE_REMOTE.get("action_lock")
+    if loop is None or context is None or action_lock is None or loop.is_closed():
+        raise RuntimeError("Der Freie-Presse-Browser ist nicht aktiv.")
+
+    async def execute():
+        async with action_lock:
+            pages = [page for page in context.pages if not page.is_closed()]
+            if not pages:
+                raise RuntimeError("Der Login-Browser wurde geschlossen.")
+            return await command(pages[-1])
+
+    return asyncio.run_coroutine_threadsafe(execute(), loop).result(timeout=15)
+
+
+@app.get("/pressespiegel/auth/freiepresse/browser-frame")
+def freie_presse_browser_frame():
+    async def capture(page):
+        return await page.screenshot(type="png", animations="disabled", timeout=10_000)
+
+    try:
+        screenshot = _run_freie_presse_browser_command(capture)
+    except Exception:
+        return jsonify({"error": "Der Login-Browser ist nicht verfügbar. Bitte Login erneut starten."}), 409
+    response = Response(screenshot, mimetype="image/png")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@app.post("/pressespiegel/auth/freiepresse/browser-action")
+def freie_presse_browser_action():
+    if not _check_same_origin_post():
+        return jsonify({"error": "Ungültige Herkunft der Anfrage."}), 403
+    if request.content_length is not None and request.content_length > 4096:
+        return jsonify({"error": "Browseraktion ist zu groß."}), 413
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Ungültige Browseraktion."}), 400
+
+    action = payload.get("action")
+    if action == "click":
+        try:
+            x, y = int(payload.get("x")), int(payload.get("y"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ungültige Klickposition."}), 400
+        if not (0 <= x < 1440 and 0 <= y < 1000):
+            return jsonify({"error": "Klickposition liegt außerhalb der Loginseite."}), 400
+
+        async def click(page):
+            await page.mouse.click(x, y, timeout=5_000)
+
+        command = click
+    elif action == "type":
+        value = payload.get("text")
+        if not isinstance(value, str) or len(value) > 2000:
+            return jsonify({"error": "Texteingabe ist ungültig oder zu lang."}), 400
+
+        async def type_text(page):
+            await page.keyboard.type(value, delay=15)
+
+        command = type_text
+    elif action == "press":
+        key = payload.get("key")
+        allowed_keys = {"Enter", "Tab", "Escape", "Backspace", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Space", "Control+A"}
+        if key not in allowed_keys:
+            return jsonify({"error": "Diese Tastatureingabe ist nicht zugelassen."}), 400
+
+        async def press_key(page):
+            await page.keyboard.press(key)
+
+        command = press_key
+    elif action == "scroll":
+        try:
+            delta_y = int(payload.get("deltaY", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ungültige Scrollbewegung."}), 400
+        if not -1000 <= delta_y <= 1000:
+            return jsonify({"error": "Scrollbewegung liegt außerhalb des erlaubten Bereichs."}), 400
+
+        async def scroll_page(page):
+            await page.mouse.wheel(0, delta_y)
+
+        command = scroll_page
+    else:
+        return jsonify({"error": "Unbekannte Browseraktion."}), 400
+
+    try:
+        _run_freie_presse_browser_command(command)
+    except Exception:
+        return jsonify({"error": "Eingabe konnte nicht an den Login-Browser gesendet werden."}), 409
+    return jsonify({"success": True})
+
+
+@app.post("/pressespiegel/auth/freiepresse/complete")
+def complete_freie_presse_auth():
+    if not _check_same_origin_post():
+        return jsonify({"error": "Ungültige Herkunft der Anfrage."}), 403
+    with FREIE_PRESSE_REMOTE_LOCK:
+        finish_event = FREIE_PRESSE_REMOTE.get("finish")
+        context = FREIE_PRESSE_REMOTE.get("context")
+    if context is None or finish_event is None:
+        return jsonify({"error": "Es läuft keine Login-Erneuerung."}), 409
+    finish_event.set()
+    return jsonify({"success": True, "message": "Session wird gespeichert."}), 202
 
 
 def saechsische_auth_status_payload() -> dict[str, Any]:

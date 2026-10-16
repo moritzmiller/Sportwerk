@@ -31,6 +31,13 @@ const authCards = [...document.querySelectorAll("[data-auth-source]")].map((card
   state: card.querySelector("[data-auth-state]"),
   message: card.querySelector("[data-auth-message]"),
   start: card.querySelector("[data-auth-start]"),
+  remote: card.querySelector("[data-auth-remote]"),
+  frame: card.querySelector("[data-auth-frame]"),
+  text: card.querySelector("[data-auth-text]"),
+  key: card.querySelector("[data-auth-key]"),
+  sendText: card.querySelector("[data-auth-send-text]"),
+  sendKey: card.querySelector("[data-auth-send-key]"),
+  complete: card.querySelector("[data-auth-complete]"),
 }));
 let savedPressespiegel = Array.isArray(savedPressespiegelData) ? savedPressespiegelData : [];
 let currentSavedPressespiegelId = "";
@@ -157,6 +164,91 @@ function setAuthStatus(authCard, payload) {
   }
   authCard.message.textContent = payload.message || "";
   authCard.message.dataset.state = payload.state || "idle";
+  if (authCard.remote) {
+    authCard.remote.classList.toggle("hidden", !payload.remote_control);
+    if (payload.remote_control) {
+      refreshFreiePresseFrame(authCard);
+    }
+  }
+}
+
+function refreshFreiePresseFrame(authCard) {
+  if (!authCard.frame || authCard.frame.dataset.loading === "true") {
+    return;
+  }
+  authCard.frame.dataset.loading = "true";
+  authCard.frame.onload = () => {
+    authCard.frame.dataset.loading = "false";
+    window.setTimeout(() => refreshFreiePresseFrame(authCard), 900);
+  };
+  authCard.frame.onerror = () => {
+    authCard.frame.dataset.loading = "false";
+    window.setTimeout(() => refreshFreiePresseFrame(authCard), 1800);
+  };
+  authCard.frame.src = `/pressespiegel/auth/freiepresse/browser-frame?t=${Date.now()}`;
+}
+
+async function freiePresseBrowserAction(payload) {
+  const response = await fetch("/pressespiegel/auth/freiepresse/browser-action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Browseraktion fehlgeschlagen.");
+  }
+}
+
+function bindFreiePresseRemote(authCard) {
+  if (!authCard.remote || !authCard.frame) {
+    return;
+  }
+  authCard.frame.addEventListener("click", (event) => {
+    const bounds = authCard.frame.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const x = Math.round((event.clientX - bounds.left) * authCard.frame.naturalWidth / bounds.width);
+    const y = Math.round((event.clientY - bounds.top) * authCard.frame.naturalHeight / bounds.height);
+    freiePresseBrowserAction({ action: "click", x, y }).catch((error) => {
+      authCard.message.textContent = error.message;
+    });
+  });
+  authCard.frame.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const deltaY = Math.max(-1000, Math.min(1000, Math.round(event.deltaY)));
+    freiePresseBrowserAction({ action: "scroll", deltaY }).catch(() => {});
+  }, { passive: false });
+  authCard.sendText?.addEventListener("click", async () => {
+    const value = authCard.text?.value || "";
+    if (!value) return;
+    authCard.sendText.disabled = true;
+    try {
+      await freiePresseBrowserAction({ action: "type", text: value });
+      authCard.text.value = "";
+    } catch (error) {
+      authCard.message.textContent = error.message;
+    } finally {
+      authCard.sendText.disabled = false;
+    }
+  });
+  authCard.sendKey?.addEventListener("click", () => {
+    freiePresseBrowserAction({ action: "press", key: authCard.key.value }).catch((error) => {
+      authCard.message.textContent = error.message;
+    });
+  });
+  authCard.complete?.addEventListener("click", async () => {
+    authCard.complete.disabled = true;
+    try {
+      const response = await fetch("/pressespiegel/auth/freiepresse/complete", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Session konnte nicht gespeichert werden.");
+      authCard.message.textContent = result.message || "Session wird gespeichert.";
+      window.setTimeout(() => refreshAuthStatus(authCard), 1500);
+    } catch (error) {
+      authCard.message.textContent = error.message;
+      authCard.complete.disabled = false;
+    }
+  });
 }
 
 async function refreshAuthStatus(authCard) {
@@ -503,6 +595,7 @@ deletePressespiegelButton.addEventListener("click", deleteSelectedPressespiegel)
 saveLayoutButton?.addEventListener("click", saveCurrentLayout);
 authCards.forEach((authCard) => {
   authCard.start?.addEventListener("click", () => startAuth(authCard));
+  bindFreiePresseRemote(authCard);
 });
 
 form.addEventListener("submit", async (event) => {

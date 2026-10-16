@@ -1707,6 +1707,51 @@ textarea:focus {
   color: var(--color-danger);
 }
 
+.source-auth__remote {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  border-top: 1px solid rgba(31, 111, 235, 0.18);
+  padding-top: var(--space-4);
+}
+
+.source-auth__remote > p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.source-auth__remote img {
+  display: block;
+  width: min(100%, 1080px);
+  height: auto;
+  border: 1px solid rgba(31, 41, 55, 0.2);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  cursor: crosshair;
+}
+
+.source-auth__remote-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.source-auth__remote-controls input {
+  flex: 1 1 240px;
+  min-width: 150px;
+}
+
+.source-auth__remote-controls select {
+  min-height: 42px;
+}
+
+.source-auth__hint {
+  font-size: var(--font-size-xs) !important;
+}
+
 .section-item {
   border: 1px solid rgba(207, 214, 225, 0.94);
   border-radius: var(--radius-lg);

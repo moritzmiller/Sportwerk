@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import base64
 import hashlib
 import io
@@ -79,6 +80,7 @@ INSTANCE_DIR = PRESS_DIR / "instance"
 FREIE_PRESSE_AUTH_DIR = INSTANCE_DIR / "auth" / "freiepresse"
 FREIE_PRESSE_PROFILE_DIR = FREIE_PRESSE_AUTH_DIR / "profile"
 FREIE_PRESSE_STORAGE_STATE_PATH = FREIE_PRESSE_AUTH_DIR / "storage_state.json"
+FREIE_PRESSE_PROFILE_LOCK_PATH = FREIE_PRESSE_AUTH_DIR / "profile.lock"
 FREIE_PRESSE_LOGIN_URL = "https://www.freiepresse.de/"
 FREIE_PRESSE_DOMAINS = {"freiepresse.de", "www.freiepresse.de"}
 SAECHSISCHE_AUTH_DIR = INSTANCE_DIR / "auth" / "saechsische"
@@ -112,12 +114,72 @@ def freie_presse_storage_state_path() -> Path:
     return FREIE_PRESSE_STORAGE_STATE_PATH
 
 
+def acquire_freie_presse_profile_lock():
+    """Take a non-blocking cross-process lock before opening the persistent profile."""
+    FREIE_PRESSE_PROFILE_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        FREIE_PRESSE_PROFILE_LOCK_PATH.parent.chmod(0o700)
+        profile_dir = FREIE_PRESSE_PROFILE_LOCK_PATH.parent / "profile"
+        if profile_dir.exists():
+            profile_dir.chmod(0o700)
+    except OSError:
+        pass
+    try:
+        handle = FREIE_PRESSE_PROFILE_LOCK_PATH.open("a+b")
+    except OSError:
+        return None
+    try:
+        try:
+            os.fchmod(handle.fileno(), 0o600)
+        except OSError:
+            pass
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            if handle.read(1) == b"":
+                handle.seek(0)
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return handle
+    except (OSError, BlockingIOError):
+        handle.close()
+        return None
+
+
+def release_freie_presse_profile_lock(handle) -> None:
+    if handle is None:
+        return
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    finally:
+        handle.close()
+
+
 def has_persistent_profile_state(profile_dir: Path) -> bool:
     default_profile = profile_dir / "Default"
     return default_profile.exists() and any(default_profile.iterdir())
 
 
 def has_freie_presse_auth_state() -> bool:
+    if (FREIE_PRESSE_AUTH_DIR / ".login-pending").exists():
+        return False
     return (
         FREIE_PRESSE_STORAGE_STATE_PATH.exists()
         and FREIE_PRESSE_STORAGE_STATE_PATH.stat().st_size > 0
@@ -3865,6 +3927,7 @@ async def core_build_pressespiegel(
                 browser = await playwright.chromium.launch(headless=True)
                 context = await create_pressespiegel_context(browser)
                 freie_presse_context = None
+                freie_presse_profile_lock = None
                 saechsische_context = None
                 lvz_context = None
                 radio_dresden_context = None
@@ -3886,12 +3949,26 @@ async def core_build_pressespiegel(
                             if is_freie_presse_url(url):
                                 if has_freie_presse_auth_state():
                                     if freie_presse_context is None:
-                                        freie_presse_context = await create_source_pressespiegel_context(
-                                            playwright,
-                                            browser,
-                                            FREIE_PRESSE_PROFILE_DIR,
-                                            freie_presse_storage_state_path(),
-                                        )
+                                        freie_presse_profile_lock = acquire_freie_presse_profile_lock()
+                                        if freie_presse_profile_lock is not None and has_persistent_profile_state(
+                                            FREIE_PRESSE_PROFILE_DIR
+                                        ):
+                                            freie_presse_context = await create_source_pressespiegel_context(
+                                                playwright,
+                                                browser,
+                                                FREIE_PRESSE_PROFILE_DIR,
+                                                freie_presse_storage_state_path(),
+                                            )
+                                        else:
+                                            release_freie_presse_profile_lock(freie_presse_profile_lock)
+                                            freie_presse_profile_lock = None
+                                            freie_presse_context = await create_pressespiegel_context(
+                                                browser, freie_presse_storage_state_path()
+                                            )
+                                            log_callback(
+                                                "Freie Presse: das persistente Profil ist gerade belegt; "
+                                                "die zuletzt gespeicherte Session wird isoliert verwendet."
+                                            )
                                     article_context = freie_presse_context
                                     log_callback("Freie Presse: gespeicherter Login wird verwendet.")
                                 else:
@@ -3981,6 +4058,7 @@ async def core_build_pressespiegel(
                 finally:
                     if freie_presse_context is not None:
                         await freie_presse_context.close()
+                    release_freie_presse_profile_lock(freie_presse_profile_lock)
                     if saechsische_context is not None:
                         await saechsische_context.close()
                     if lvz_context is not None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +37,40 @@ class FakeUrlopenResponse:
 
 
 class PressespiegelCaptureBlockerTests(unittest.TestCase):
+    def test_persistent_chromium_launches_headless_without_x_server(self) -> None:
+        async def launch() -> None:
+            async with async_playwright() as playwright:
+                if not Path(playwright.chromium.executable_path).exists():
+                    self.skipTest("Playwright-Chromium ist nicht installiert.")
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    state_path = Path(temp_dir) / "storage-state.json"
+                    context = await playwright.chromium.launch_persistent_context(
+                        user_data_dir=temp_dir,
+                        headless=True,
+                        viewport={"width": 1440, "height": 1000},
+                    )
+                    try:
+                        page = context.pages[0] if context.pages else await context.new_page()
+                        await page.goto("data:text/html,<title>headless-ok</title>")
+                        self.assertEqual(await page.title(), "headless-ok")
+                        await context.add_cookies(
+                            [{"name": "test-session", "value": "preserved", "url": "https://www.freiepresse.de"}]
+                        )
+                        await context.storage_state(path=str(state_path))
+                    finally:
+                        await context.close()
+                    browser = await playwright.chromium.launch(headless=True)
+                    try:
+                        restored = await browser.new_context(storage_state=str(state_path))
+                        cookies = await restored.cookies("https://www.freiepresse.de")
+                        self.assertTrue(any(cookie["name"] == "test-session" for cookie in cookies))
+                        await restored.close()
+                    finally:
+                        await browser.close()
+
+        with patch.dict(os.environ, {"DISPLAY": ""}):
+            asyncio.run(launch())
+
     def test_article_image_url_can_be_extracted_from_srcset(self) -> None:
         html = """
         <html>
@@ -78,6 +114,36 @@ class PressespiegelCaptureBlockerTests(unittest.TestCase):
         )
         self.assertTrue(pressespiegel.is_radio_dresden_url("https://app.radiodresden.de/beispiel"))
         self.assertFalse(pressespiegel.is_radio_dresden_url("https://www.lvz.de/beispiel"))
+
+    def test_freie_presse_profile_lock_is_exclusive_and_reusable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = Path(temp_dir) / "auth" / "profile.lock"
+            with patch.object(pressespiegel, "FREIE_PRESSE_PROFILE_LOCK_PATH", lock_path):
+                first_lock = pressespiegel.acquire_freie_presse_profile_lock()
+                self.assertIsNotNone(first_lock)
+                try:
+                    self.assertIsNone(pressespiegel.acquire_freie_presse_profile_lock())
+                finally:
+                    pressespiegel.release_freie_presse_profile_lock(first_lock)
+
+                second_lock = pressespiegel.acquire_freie_presse_profile_lock()
+                self.assertIsNotNone(second_lock)
+                pressespiegel.release_freie_presse_profile_lock(second_lock)
+
+    def test_unconfirmed_freie_presse_profile_is_not_treated_as_logged_in(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            auth_dir = Path(temp_dir) / "auth"
+            profile_dir = auth_dir / "profile"
+            default_profile = profile_dir / "Default"
+            default_profile.mkdir(parents=True)
+            (default_profile / "Preferences").write_text("{}", encoding="utf-8")
+            (auth_dir / ".login-pending").write_text("pending", encoding="utf-8")
+            with (
+                patch.object(pressespiegel, "FREIE_PRESSE_AUTH_DIR", auth_dir),
+                patch.object(pressespiegel, "FREIE_PRESSE_PROFILE_DIR", profile_dir),
+                patch.object(pressespiegel, "FREIE_PRESSE_STORAGE_STATE_PATH", auth_dir / "storage_state.json"),
+            ):
+                self.assertFalse(pressespiegel.has_freie_presse_auth_state())
 
     def test_radio_dresden_auth_state_accepts_persistent_profile(self) -> None:
         with patch.object(

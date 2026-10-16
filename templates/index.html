@@ -64,6 +64,21 @@
             </div>
             <button class="button button--secondary" type="button" data-auth-start>Login erneuern</button>
             <p class="source-auth__message" aria-live="polite" data-auth-message></p>
+            <div class="source-auth__remote hidden" data-auth-remote>
+              <p>Bediene die Freie-Presse-Anmeldung hier. Eingaben werden nicht gespeichert oder protokolliert.</p>
+              <img data-auth-frame alt="Freie-Presse-Anmeldeseite" draggable="false">
+              <div class="source-auth__remote-controls">
+                <input type="password" autocomplete="off" data-auth-text aria-label="Text an Loginseite senden" placeholder="Feld anklicken, Text eingeben …">
+                <button class="button button--secondary" type="button" data-auth-send-text>Text senden</button>
+                <select data-auth-key aria-label="Taste senden">
+                  <option value="Enter">Enter</option><option value="Tab">Tab</option>
+                  <option value="Escape">Escape</option><option value="Control+A">Alles markieren</option>
+                </select>
+                <button class="button button--secondary" type="button" data-auth-send-key>Taste senden</button>
+                <button class="button button--primary" type="button" data-auth-complete>Session speichern</button>
+              </div>
+              <p class="source-auth__hint">Zum Klicken ins Bild klicken. Für Passwortfelder bleibt die Eingabe standardmäßig verdeckt.</p>
+            </div>
           </div>
 
           <div class="source-auth" aria-label="Sächsische-Zeitung-Zugang" data-auth-source="saechsische">

@@ -26,6 +26,16 @@ Ein einfacher Produktionsstart kann über einen WSGI-Server erfolgen, zum Beispi
 web_app:app
 ```
 
+Auf Linux läuft der Freie-Presse-Login headless; ein X-Server oder `xvfb` ist dafür nicht erforderlich. Der angemeldete Administrator bedient die Loginseite während „Login erneuern“ direkt in der Weboberfläche. Auf dem Server müssen Playwright-Chromium und die dazugehörigen Linux-Systembibliotheken installiert sein.
+
+Da Login-Browser und laufende Pressespiegel-Jobs ihren Zustand im Prozess halten, muss der WSGI-Dienst als einzelner Worker mit Threads betrieben werden, zum Beispiel aus diesem Verzeichnis:
+
+```bash
+gunicorn --workers 1 --threads 8 --timeout 180 web_app:app
+```
+
+Die Freie-Presse-Sitzung bleibt im vorhandenen `instance/auth/freiepresse/profile` und `storage_state.json` erhalten. Die Dateien werden nicht ins Repository aufgenommen (`instance/` ist ignoriert). Während das Profil geöffnet ist, verhindert eine Betriebssystem-Sperre einen parallelen Zugriff; Artikel-Jobs verwenden in diesem Fall die zuletzt gespeicherte Session-Kopie. Nach dem Anmelden muss der Administrator in der Oberfläche **Session speichern** wählen.
+
 Upload-Assets und erzeugte PDFs werden unter `instance/` gespeichert. Dieser Ordner sollte auf dem Server beschreibbar sein.
 
 ## Bedienung
@@ -38,7 +48,9 @@ Der Bereich `URLs ohne Abschnitte` bleibt als Fallback erhalten. Sobald mindeste
 
 Wenn ein Artikel hinter einer Paywall oder Anmeldung liegt oder der Seitenscreenshot nur den reinen Artikelkörper enthält, versucht die App zuerst frei verfügbare strukturierte Artikeldaten zu verwenden. Sind dort Überschrift, Titelbild, Teaser und ausreichender Artikeltext enthalten, wird daraus ein lesbares Artikelbild für das PDF erzeugt.
 
-Für die Freie Presse, Sächsische Zeitung, Leipziger Volkszeitung und Radio Dresden kann ein berechtigter Zugang einmalig in der Web-Oberfläche autorisiert werden. Der Button `Login erneuern` öffnet ein Browserfenster, in dem ein Admin den Verlag normal anmeldet. Die App speichert danach nur die Browser-Sitzung unter `instance/auth/freiepresse/`, `instance/auth/saechsische/`, `instance/auth/lvz/` beziehungsweise `instance/auth/radiodresden/` und nutzt sie automatisch für Artikel der jeweiligen Quelle. Zugangsdaten werden nicht im Code oder in der Pressespiegel-Konfiguration gespeichert.
+Für die Freie Presse, Sächsische Zeitung, Leipziger Volkszeitung und Radio Dresden kann ein berechtigter Zugang einmalig in der Web-Oberfläche autorisiert werden. Der Button `Login erneuern` öffnet für die Freie Presse eine headless Browseransicht in der Web-App, in der ein Admin den Verlag normal anmeldet; die anderen Integrationen bleiben unverändert. Die App speichert die Browser-Sitzung unter `instance/auth/freiepresse/`, `instance/auth/saechsische/`, `instance/auth/lvz/` beziehungsweise `instance/auth/radiodresden/` und nutzt sie automatisch für Artikel der jeweiligen Quelle. Zugangsdaten werden nicht im Code oder in der Pressespiegel-Konfiguration gespeichert oder protokolliert.
+
+Für die Freie Presse: **Login erneuern** anklicken, im Browserbildschirm die Anmeldeseite bedienen und das Eingabefeld der Web-App zum Übertragen von Benutzername/Passwort oder einem eingefügten Code verwenden. Danach **Session speichern** wählen. Ein abgebrochener oder abgelaufener Versuch wird nicht als bestätigter Login angezeigt.
 
 Wenn kein autorisierter Zugang vorhanden ist oder der gespeicherte Login abgelaufen ist, fügt die App statt eines leeren Kastens eine Paywall-Hinweisseite in das PDF ein. Diese enthält Quelle, Datum, URL, Überschrift und frei sichtbaren Teaser.
 

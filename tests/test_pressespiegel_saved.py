@@ -146,6 +146,29 @@ class SavedPressespiegelTests(unittest.TestCase):
         saved_job = json.loads(web_app.job_state_path("pressespiegel", "job-id").read_text(encoding="utf-8"))
         self.assertEqual(saved_job["summary"]["articles"][0]["url"], expected_url)
 
+    def test_freie_presse_remote_login_rejects_cross_origin_actions(self) -> None:
+        response = self.client.post(
+            "/pressespiegel/auth/freiepresse/browser-action",
+            json={"action": "press", "key": "Enter"},
+            headers={"Origin": "https://attacker.example"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_freie_presse_remote_login_rejects_unsupported_actions(self) -> None:
+        response = self.client.post(
+            "/pressespiegel/auth/freiepresse/browser-action",
+            json={"action": "evaluate", "script": "document.cookie"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_freie_presse_remote_frame_is_unavailable_when_no_login_is_running(self) -> None:
+        with web_app.FREIE_PRESSE_REMOTE_LOCK:
+            web_app.FREIE_PRESSE_REMOTE.update(
+                {"loop": None, "context": None, "action_lock": None}
+            )
+        response = self.client.get("/pressespiegel/auth/freiepresse/browser-frame")
+        self.assertEqual(response.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()
